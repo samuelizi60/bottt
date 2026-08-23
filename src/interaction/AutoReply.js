@@ -66,8 +66,9 @@ export class AutoReply {
       quotedParticipant.split('@')[0] === botNum
     );
 
-    // O bot SÓ responderá se for conversa privada (PV/DM) OU se foi mencionado/citado diretamente
-    if (!isGroup || isMentioned || isReplyingToBot) {
+    // O bot NÃO responderá automaticamente no privado (PV) a mensagens comuns como "oi" ou qualquer outro texto.
+    // Responderá apenas em grupos quando for mencionado ou citado diretamente.
+    if (isGroup && (isMentioned || isReplyingToBot)) {
       // Remove a tag do bot do prompt para não poluir
       const cleanPrompt = text.replace(/@(whatsappautomationbot|automationbot|quintupletsbot)/gi, '').trim() || 'Olá!';
 
@@ -97,7 +98,7 @@ export class AutoReply {
       }
     }
 
-    // Não responde mensagens aleatórias de grupo para não incomodar os membros
+    // Não responde mensagens aleatórias de PV ou de grupo
     return false;
   }
 }
