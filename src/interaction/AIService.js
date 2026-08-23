@@ -1,6 +1,6 @@
 /**
  * AIService.js
- * Módulo de interação com a Inteligência Artificial para o Quintuplets Bot.
+ * Módulo de interação com a Inteligência Artificial para o WhatsApp Automation Bot.
  * Suporta diálogo multi-turn contínuo e personalidades das 5 irmãs Nakano.
  */
 
@@ -50,6 +50,8 @@ export class AIService {
       let cleaned = response
         .replace(new RegExp(`^${charInfo.nickname}:\\s*`, 'i'), '')
         .replace(new RegExp(`^\\[${charInfo.nickname}\\]:\\s*`, 'i'), '')
+        .replace(/^WhatsApp Automation Bot:\s*/i, '')
+        .replace(/^\[WhatsApp Automation Bot\]:\s*/i, '')
         .replace(/^Quintuplets Bot:\s*/i, '')
         .replace(/^\[Quintuplets Bot\]:\s*/i, '')
         .replace(/^Bot:\s*/i, '')

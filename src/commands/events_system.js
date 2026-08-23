@@ -7,7 +7,7 @@ export async function handleEventsSystemCommands(sock, msg, command, args) {
   const now = new Date();
   const month = now.getMonth() + 1; // 1-12
 
-  let activeEvent = '🎉 *EVENTO DE BOAS-VINDAS QUINTUPLETS BOT*';
+  let activeEvent = '🎉 *EVENTO DE BOAS-VINDAS WHATSAPP AUTOMATION BOT*';
   let eventDesc = 'Todos os ganhos de XP e moedas estão com bônus de +15%!';
 
   if (month === 12) {

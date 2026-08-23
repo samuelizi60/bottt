@@ -2,7 +2,7 @@ import { getRebirthBonus } from '../config/rebirthConfig.js';
 
 /**
  * bonusCalculator.js
- * Utilitário centralizado de cálculo de bônus, atributos e estatísticas para o Quintuplets Bot.
+ * Utilitário centralizado de cálculo de bônus, atributos e estatísticas para o WhatsApp Automation Bot.
  * 
  * Integra:
  * 1. Progressão de Classe RPG (Tiers 1 a 4 por Nível)

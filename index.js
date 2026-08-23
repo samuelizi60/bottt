@@ -57,29 +57,6 @@ async function startBot() {
 
   const sock = queueManager.wrapSocket(rawSock);
 
-  // Suporte a Código de Pareamento (login por número de celular em vez de QR Code)
-  const botNumber = process.env.BOT_NUMERO || process.env.PAIRING_NUMBER;
-  if (botNumber && !state.creds.registered) {
-    setTimeout(async () => {
-      try {
-        const cleanNumber = botNumber.replace(/[^0-9]/g, '');
-        const code = await sock.requestPairingCode(cleanNumber);
-        const formattedCode = code?.match(/.{1,4}/g)?.join('-') || code;
-        console.log('\n=======================================================');
-        console.log('🔑 CÓDIGO DE PAREAMENTO DO WHATSAPP (SEM QR CODE):');
-        console.log(`👉  \x1b[32m\x1b[1m${formattedCode}\x1b[0m  👈`);
-        console.log('=======================================================');
-        console.log('Passos para conectar sem câmera/QR Code:');
-        console.log('1. No celular, abra o WhatsApp > Dispositivos Conectados');
-        console.log('2. Toque em "Conectar um dispositivo"');
-        console.log('3. Toque em "Conectar com número de telefone" no rodapé da tela');
-        console.log(`4. Digite o código de 8 dígitos: ${formattedCode}\n`);
-      } catch (err) {
-        console.error('Erro ao gerar código de pareamento:', err.message);
-      }
-    }, 3000);
-  }
-
   // Atualiza as credenciais sempre que houver mudança (ex: conexão estabelecida)
   sock.ev.on('creds.update', saveCreds);
 
@@ -87,8 +64,8 @@ async function startBot() {
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    // Se o QR Code estiver disponível no update (e não estiver usando código de pareamento)
-    if (qr && !botNumber) {
+    // Se o QR Code estiver disponível no update
+    if (qr) {
       console.log('\n✨ ESCANEIE O QR CODE ABAIXO COM O WHATSAPP DO SEU CELULAR:');
       qrcode.generate(qr, { small: true });
       console.log('Dica: Abra o WhatsApp > Configurações/Três Pontinhos > Dispositivos Conectados > Conectar um Dispositivo.\n');

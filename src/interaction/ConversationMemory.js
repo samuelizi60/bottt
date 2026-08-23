@@ -35,7 +35,7 @@ class ConversationMemory {
     history.push({
       id: id || Date.now().toString(),
       sender: sender || 'desconhecido',
-      senderName: senderName || (isBot ? 'Quintuplets Bot' : 'Membro'),
+      senderName: senderName || (isBot ? 'WhatsApp Automation Bot' : 'Membro'),
       text: text.trim(),
       timeString,
       isBot

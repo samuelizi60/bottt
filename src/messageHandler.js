@@ -421,9 +421,9 @@ export async function handleMessages(rawSock, msg) {
       const latency = ((Date.now() - (timestamp * 1000)) / 1000).toFixed(3);
       const velocityStr = latency < 0 ? '0.002' : latency;
 
-      const menuText = `╔════════════════╗\n` +
-                       ` ✨ QUINTUPLETS BOT ✨ \n` +
-                       `╚════════════════╝\n` +
+      const menuText = `╔═══════════════════════════╗\n` +
+                       ` ✨ WHATSAPP AUTOMATION BOT ✨ \n` +
+                       `╚═══════════════════════════╝\n` +
                        `─── Comandos Originais ───\n` +
                        `「 🎵 」/play — baixar música (YouTube / TikTok / Instagram)\n` +
                        `「 🎥 」/video — Baixar vídeo (YouTube / TikTok / Instagram)\n` +
@@ -577,7 +577,7 @@ export async function handleMessages(rawSock, msg) {
                        `「 🗣️ 」/tts - texto em áudio (com várias vozes)\n` +
                        `「 📝 」/ocr - extrair texto de fotos\n` +
                        `══════════════════\n` +
-                       `🤖 Bot: QUINTUPLETS BOT\n` +
+                       `🤖 Bot: WHATSAPP AUTOMATION BOT\n` +
                        `⚡ Velocidade: ${velocityStr}s\n` +
                        `🌙 Uptime: ${uptimeStr}\n` +
                        `══════════════════`;

@@ -50,7 +50,7 @@ export async function handleProfilePrestigeCommands(sock, msg, command, args, se
     case 'conquistas':
     case 'medalhas': {
       const achievements = [
-        { name: '🐣 Primeiro Passo', desc: 'Registrou-se no Quintuplets Bot', unlocked: true },
+        { name: '🐣 Primeiro Passo', desc: 'Registrou-se no WhatsApp Automation Bot', unlocked: true },
         { name: '💼 Trabalhador Honrado', desc: 'Realizou 10 turnos em /trabalhar', unlocked: (user.wallet + user.bank) > 5000 },
         { name: '🏰 Proprietário de Luxo', desc: 'Comprou seu primeiro imóvel em /casas', unlocked: (extraData.houses?.length || 0) > 0 },
         { name: '🐾 Amigo dos Animais', desc: 'Adotou um pet em /pets', unlocked: !!extraData.pet },

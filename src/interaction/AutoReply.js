@@ -55,7 +55,7 @@ export class AutoReply {
     const quotedParticipant = contextInfo?.participant || '';
 
     // 1. Verificação de Menção ao Bot ou a uma das 5 Irmãs Nakano
-    const isMentionedByName = /@quintupletsbot/i.test(text);
+    const isMentionedByName = /@(whatsappautomationbot|automationbot|quintupletsbot)/i.test(text);
     const isMentionedByJid = botJid && mentionedJids.includes(botJid);
     const isQuintupletMentioned = !!PersonalityManager.detectMentionedQuintuplet(text);
     const isMentioned = isMentionedByName || isMentionedByJid || (isGroup && isQuintupletMentioned);
@@ -68,8 +68,8 @@ export class AutoReply {
 
     // O bot SÓ responderá se for conversa privada (PV/DM) OU se foi mencionado/citado diretamente
     if (!isGroup || isMentioned || isReplyingToBot) {
-      // Remove a tag @QuintupletsBot do prompt para não poluir
-      const cleanPrompt = text.replace(/@quintupletsbot/gi, '').trim() || 'Olá!';
+      // Remove a tag do bot do prompt para não poluir
+      const cleanPrompt = text.replace(/@(whatsappautomationbot|automationbot|quintupletsbot)/gi, '').trim() || 'Olá!';
 
       await sock.sendPresenceUpdate?.('composing', from).catch(() => {});
 
