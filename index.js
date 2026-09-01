@@ -9,7 +9,6 @@ import { initSqlite } from './src/database/sqlite.js';
 import { handleMessages } from './src/messageHandler.js';
 import queueManager from './src/queue/QueueManager.js';
 
-import { startBirthdayChecker } from './src/utils/birthdayChecker.js';
 
 // Cache global de tentativas de retry para evitar loops de mensagens não descriptografadas
 const msgRetryCounterCache = new Map();
@@ -110,7 +109,6 @@ async function startBot() {
       console.log('║ Digite os comandos no WhatsApp para    ║');
       console.log('║ interagir com o bot.                   ║');
       console.log('╚════════════════════════════════════════╝\n');
-      startBirthdayChecker(sock);
     }
   });
 

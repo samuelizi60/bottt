@@ -100,6 +100,4 @@ export async function transferMoney(senderJid, targetJid, amount) {
   return await databaseManager.transferMoney(senderJid, targetJid, amount);
 }
 
-export { saveBirthday, getBirthday, removeBirthday, getAllBirthdays, updateNotificationYear } from './BirthdayRepository.js';
-
 export default databaseManager;
