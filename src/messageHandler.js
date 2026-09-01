@@ -47,7 +47,6 @@ import { handleGrupoCommand } from './commands/info/grupo.js';
 import { handleMinigamesCommands } from './commands/minigames.js';
 import { handleRpgSystemCommands } from './commands/rpg_system.js';
 import { handleGroupReputationCommands } from './commands/group_reputation.js';
-import { handleMediaExtraCommands } from './commands/media_extra.js';
 
 import queueManager from './queue/QueueManager.js';
 import { handleQueueStatsCommand } from './commands/admin_extra/queueStats.js';
@@ -355,12 +354,7 @@ export async function handleMessages(rawSock, msg) {
                        `「 🎥 」/video — Baixar vídeo (YouTube / TikTok / Instagram)\n` +
                        `「 🖼️ 」/sticker — Figurinha\n` +
                        `「 🖼️ 」/unsticker — transforma sticker em imagem\n` +
-                       `「 👁️ 」/ver — revelar mídia de visualização única\n` +
-                       `「 📱 」/pinterest — Baixar do Pinterest\n` +
-                       `「 📱 」/facebook — Baixar do Facebook\n` +
-                       `「 📱 」/threads — Baixar do Threads\n` +
-                       `「 📱 」/spotify — Baixar do Spotify\n` +
-                       `「 📱 」/twitter — Baixar do Twitter\n\n` +
+                       `「 👁️ 」/ver — revelar mídia de visualização única\n\n` +
                        `─── Casamento & Social ───\n` +
                        `「 💍 」/casar - pedir casamento\n` +
                        `「 ✅ 」/aceitar - aceitar pedido\n` +
@@ -524,10 +518,6 @@ export async function handleMessages(rawSock, msg) {
     // 👥 Reputação & Enquetes & Tickets
     else if (['rep', 'unrep', 'enquete', 'poll', 'ticket'].includes(command)) {
       await handleGroupReputationCommands(sock, msg, command, args, sender, mentioned);
-    }
-    // 📱 Downloader Multi-plataforma
-    else if (['pinterest', 'facebook', 'threads', 'spotify', 'twitter', 'download'].includes(command)) {
-      await handleMediaExtraCommands(sock, msg, command, args);
     }
     // ℹ Informações
     else if (command === 'ping') await handlePingCommand(sock, msg);
