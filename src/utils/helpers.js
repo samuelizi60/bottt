@@ -97,6 +97,9 @@ if (fs.existsSync('/root/.deno/bin') && !process.env.PATH.includes('/root/.deno/
   process.env.PATH = `/root/.deno/bin:${process.env.PATH}`;
 }
 
+// Verifica se há cookies válidos configurados pelo usuário
+const hasValidCookies = !!process.env.YOUTUBE_COOKIES?.trim() || (fs.existsSync(COOKIES_PATH) && fs.statSync(COOKIES_PATH).size > 2000);
+
 // Monta os argumentos base para o yt-dlp ignorar bloqueios de robôs do YouTube em servidores (Railway/Cloud)
 function buildBaseArgs(withCookies = true, clientOverride = null) {
   const nodePath = process.execPath;
@@ -104,16 +107,25 @@ function buildBaseArgs(withCookies = true, clientOverride = null) {
   const args = [
     '--no-playlist',
     '--force-ipv4',
-    '--geo-bypass',
-    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+    '--geo-bypass'
   ];
 
+  // Configura User-Agent coerente com o tipo de cliente para evitar detecção de spoofing
+  if (clientOverride === 'android') {
+    // Para o cliente Android, deixa o yt-dlp usar os headers nativos do app YouTube
+  } else if (clientOverride === 'mweb') {
+    args.push('--user-agent', 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36');
+  } else {
+    args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36');
+  }
+
+  // Runtimes JavaScript para resolver desafios de assinatura
   if (fs.existsSync('/root/.deno/bin/deno')) {
     args.push('--js-runtimes', 'deno:/root/.deno/bin/deno');
-  } else {
-    args.push('--js-runtimes', 'deno');
   }
-  args.push('--js-runtimes', `node:${nodePath}`);
+  if (nodePath) {
+    args.push('--js-runtimes', `node:${nodePath}`);
+  }
   
   if (clientOverride) {
     args.push('--extractor-args', `youtube:player_client=${clientOverride}`);
@@ -123,72 +135,49 @@ function buildBaseArgs(withCookies = true, clientOverride = null) {
     args.push('--ffmpeg-location', ffmpegPath);
   }
   
-  if (withCookies && fs.existsSync(COOKIES_PATH)) {
+  if (withCookies && hasValidCookies && fs.existsSync(COOKIES_PATH)) {
     args.push('--cookies', COOKIES_PATH);
-    console.log('[yt-dlp] Usando cookies.txt do YouTube.');
+    console.log('[yt-dlp] Usando cookies autenticados do YouTube.');
   }
 
   return args;
 }
 
-// Executa o download com retentativas inteligentes (prioriza requisição com cookies autenticados e JS runtime do Node)
+// Executa o download com retentativas inteligentes (clientes alternativos para contornar bloqueio de datacenter)
 async function downloadWithYtDlp(url, specificArgs) {
-  // Tentativa 1: Com cookies.txt (se existir) + padrão do yt-dlp (Mais confiável)
-  try {
-    const argsStandard = [url, ...buildBaseArgs(true, null), ...specificArgs];
-    return await runYtDlpExecFile(argsStandard);
-  } catch (firstError) {
-    console.warn('⚠️ Falha 1 (cookies padrao). Tentando com cookies + cliente ios,web...', firstError.message);
-    
-    // Tentativa 2: Com cookies + cliente ios,web
+  const attempts = [];
+
+  // Se houver cookies reais válidos configurados, tenta primeiro com eles
+  if (hasValidCookies) {
+    attempts.push({ name: 'cookies + padrao', withCookies: true, client: null });
+    attempts.push({ name: 'cookies + android', withCookies: true, client: 'android' });
+  }
+
+  // Clientes com menor incidência de bloqueio de IP no YouTube
+  attempts.push({ name: 'cliente android (sem cookies)', withCookies: false, client: 'android' });
+  attempts.push({ name: 'cliente tv_embedded (sem cookies)', withCookies: false, client: 'tv_embedded' });
+  attempts.push({ name: 'cliente mweb (sem cookies)', withCookies: false, client: 'mweb' });
+  attempts.push({ name: 'cliente ios (sem cookies)', withCookies: false, client: 'ios' });
+  attempts.push({ name: 'padrao direto (sem cookies)', withCookies: false, client: null });
+
+  let lastError = null;
+
+  for (let i = 0; i < attempts.length; i++) {
+    const attempt = attempts[i];
     try {
-      const argsIos = [url, ...buildBaseArgs(true, 'ios,web'), ...specificArgs];
-      return await runYtDlpExecFile(argsIos);
-    } catch (secondError) {
-      console.warn('⚠️ Falha 2 (cookies ios). Tentando com cookies + cliente android,web...', secondError.message);
-      
-      // Tentativa 3: Com cookies + cliente android,web
-      try {
-        const argsAndroid = [url, ...buildBaseArgs(true, 'android,web'), ...specificArgs];
-        return await runYtDlpExecFile(argsAndroid);
-      } catch (thirdError) {
-        console.warn('⚠️ Falha 3 (cookies android). Tentando com cookies + cliente web_creator,web...', thirdError.message);
-        
-        // Tentativa 4: Com cookies + cliente web_creator,web
-        try {
-          const argsCreator = [url, ...buildBaseArgs(true, 'web_creator,web'), ...specificArgs];
-          return await runYtDlpExecFile(argsCreator);
-        } catch (fourthError) {
-          console.warn('⚠️ Falha 4 (cookies web_creator). Tentando sem cookies + cliente ios,web...', fourthError.message);
-          
-          // Tentativa 5: Sem cookies + cliente ios,web
-          try {
-            const argsNoCookies = [url, ...buildBaseArgs(false, 'ios,web'), ...specificArgs];
-            return await runYtDlpExecFile(argsNoCookies);
-          } catch (fifthError) {
-            console.warn('⚠️ Falha 5 (sem cookies). Tentando wrapper ytdl...', fifthError.message);
-            
-            // Tentativa 6: Wrapper ytdl com cookies e jsRuntimes
-            try {
-              return await ytdl(url, {
-                noPlaylist: true,
-                forceIpv4: true,
-                jsRuntimes: 'node',
-                ...(fs.existsSync(COOKIES_PATH) ? { cookies: COOKIES_PATH } : {}),
-                ...(ffmpegPath && fs.existsSync(ffmpegPath) ? { ffmpegLocation: ffmpegPath } : {}),
-              });
-            } catch (finalErr) {
-              const errStr = finalErr.message || '';
-              if (errStr.includes('Sign in to confirm you’re not a bot') || errStr.includes('429')) {
-                throw new Error('O YouTube exigiu login ou bloqueou o IP do Railway. Por favor, adicione/atualize a variável YOUTUBE_COOKIES no painel do Railway com um cookies.txt logado.');
-              }
-              throw finalErr;
-            }
-          }
-        }
-      }
+      const args = [url, ...buildBaseArgs(attempt.withCookies, attempt.client), ...specificArgs];
+      return await runYtDlpExecFile(args);
+    } catch (err) {
+      lastError = err;
+      console.warn(`⚠️ Tentativa ${i + 1} (${attempt.name}) falhou: ${err.message?.slice(0, 120)}`);
     }
   }
+
+  const errStr = lastError?.message || '';
+  if (errStr.includes('Sign in to confirm you’re not a bot') || errStr.includes('429')) {
+    throw new Error('O YouTube exigiu login no servidor. Caso persista, configure a variável YOUTUBE_COOKIES no Railway.');
+  }
+  throw lastError || new Error('Não foi possível realizar o download após várias tentativas.');
 }
 
 // Extrai ID ou resolve URL / busca do YouTube
