@@ -97,8 +97,19 @@ if (fs.existsSync('/root/.deno/bin') && !process.env.PATH.includes('/root/.deno/
   process.env.PATH = `/root/.deno/bin:${process.env.PATH}`;
 }
 
-// Verifica se há cookies válidos configurados pelo usuário
-const hasValidCookies = !!process.env.YOUTUBE_COOKIES?.trim() || (fs.existsSync(COOKIES_PATH) && fs.statSync(COOKIES_PATH).size > 2000);
+// Verifica se há cookies válidos configurados (via ENV ou no cookies.txt)
+function checkValidCookies() {
+  if (process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.trim().length > 50) {
+    return true;
+  }
+  try {
+    if (fs.existsSync(COOKIES_PATH) && fs.statSync(COOKIES_PATH).size > 100) {
+      const content = fs.readFileSync(COOKIES_PATH, 'utf-8');
+      return content.includes('youtube.com') && (content.includes('SID') || content.includes('LOGIN_INFO') || content.includes('SAPISID'));
+    }
+  } catch (_) {}
+  return false;
+}
 
 // Monta os argumentos base para o yt-dlp ignorar bloqueios de robôs do YouTube em servidores (Railway/Cloud)
 function buildBaseArgs(withCookies = true, clientOverride = null) {
@@ -135,7 +146,7 @@ function buildBaseArgs(withCookies = true, clientOverride = null) {
     args.push('--ffmpeg-location', ffmpegPath);
   }
   
-  if (withCookies && hasValidCookies && fs.existsSync(COOKIES_PATH)) {
+  if (withCookies && checkValidCookies() && fs.existsSync(COOKIES_PATH)) {
     args.push('--cookies', COOKIES_PATH);
     console.log('[yt-dlp] Usando cookies autenticados do YouTube.');
   }
@@ -146,9 +157,10 @@ function buildBaseArgs(withCookies = true, clientOverride = null) {
 // Executa o download com retentativas inteligentes (clientes alternativos para contornar bloqueio de datacenter)
 async function downloadWithYtDlp(url, specificArgs) {
   const attempts = [];
+  const hasCookies = checkValidCookies();
 
   // Se houver cookies reais válidos configurados, tenta primeiro com eles
-  if (hasValidCookies) {
+  if (hasCookies) {
     attempts.push({ name: 'cookies + padrao', withCookies: true, client: null });
     attempts.push({ name: 'cookies + android', withCookies: true, client: 'android' });
   }
