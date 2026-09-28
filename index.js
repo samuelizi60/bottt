@@ -4,17 +4,44 @@ import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaile
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import QRCode from 'qrcode';
+import http from 'http';
 import { loadDatabase } from './src/database.js';
 import { initSqlite } from './src/database/sqlite.js';
 import { handleMessages } from './src/messageHandler.js';
 import queueManager from './src/queue/QueueManager.js';
-
 
 // Cache global de tentativas de retry para evitar loops de mensagens não descriptografadas
 const msgRetryCounterCache = new Map();
 
 // Marca o horário de início do bot
 global.botStartTime = Date.now();
+
+// Servidor HTTP leve para responder aos health-checks do Fly.io e servir o QR Code no navegador
+const HTTP_PORT = process.env.PORT || 8080;
+const server = http.createServer((req, res) => {
+  if (req.url === '/qr' || req.url === '/qr.png') {
+    if (fs.existsSync('./qrcode.png')) {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      return fs.createReadStream('./qrcode.png').pipe(res);
+    } else {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end('<h3>Bot já conectado ou gerando QR Code... Recarregue em alguns segundos.</h3>');
+    }
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify({
+    status: 'online',
+    name: 'Bot WhatsApp',
+    uptime_seconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    qr_code_url: '/qr'
+  }));
+});
+
+server.listen(HTTP_PORT, () => {
+  console.log(`🌐 Servidor HTTP de monitoramento ativo na porta ${HTTP_PORT}`);
+});
 
 async function startBot() {
   // Carrega banco de dados local centralizado

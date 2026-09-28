@@ -1,0 +1,34 @@
+# fly.toml - Configuração do WhatsApp Bot no Fly.io
+# Deploy: flyctl deploy
+# Logs: flyctl logs
+
+app = "bottt-frosty-darkness-7674"
+primary_region = "gru"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Volume persistente para manter a sessão (session/) e dados locais sem deslogar
+[[mounts]]
+  source = "bot_data"
+  destination = "/data"
+  initial_size = 1
+  snapshots = true
+
+# Serviço HTTP para responder a pings/health checks e impedir que o Fly desligue o bot
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+# Garante 512 MB de RAM para evitar que o Node.js/Baileys/FFmpeg sofra OOM Kill
+[[vm]]
+  memory = "512mb"
+  cpus = 1
+  cpu_kind = "shared"
+
+# Reinicia automaticamente em caso de falha temporária
+[deploy]
+  restart = "always"

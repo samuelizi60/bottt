@@ -97,14 +97,15 @@ class DatabaseManager {
         await this.pgClient.connect();
         this.isPg = true;
         this.log('Backend: PostgreSQL (Supabase)');
-        this.log('✅ Conectado ao Supabase com sucesso!');
       } catch (err) {
-        this.logErr(`❌ Erro ao conectar ao Supabase: ${err.message}`);
+        this.logErr(`⚠️ Erro ao conectar ao Supabase: ${err.message}`);
+        this.log('🔄 Alternando automaticamente para SQLite local no volume persistente...');
         this.isPg = false;
-        throw new Error(`[DATABASE] Conexão com o Supabase falhou: ${err.message}`);
       }
-    } else {
-      this.log('⚠️ Nenhuma DATABASE_URL fornecida. Usando SQLite local.');
+    }
+
+    if (!this.isPg) {
+      this.log('⚠️ Operando com SQLite local.');
       this.log('Backend: SQLite');
       try {
         const SQL = await initSqlJs();

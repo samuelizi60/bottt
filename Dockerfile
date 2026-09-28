@@ -25,6 +25,14 @@ RUN npm install
 # Copia o codigo do projeto para a imagem
 COPY . .
 
-# Comando de inicializacao do bot
+# Copia o entrypoint que configura symlinks para dados persistentes
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Expõe a porta 8080 para health check do Fly.io
+EXPOSE 8080
+
+# Comando de inicializacao do bot (entrypoint linka volume /data para arquivos persistentes)
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["npm", "start"]
 
