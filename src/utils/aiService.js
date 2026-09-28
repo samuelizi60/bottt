@@ -25,11 +25,11 @@ export async function askAiChat(messages, options = {}) {
     return text.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim();
   };
 
-  // 1. Prioridade Máxima: Groq API (Exclusivamente Qwen 3.6 27B)
+  // 1. Prioridade Máxima: Groq API (Exclusivamente Qwen 3.8 27B)
   if (apiKey.startsWith('gsk_')) {
     try {
       const payload = {
-        model: 'qwen/qwen3.6-27b',
+        model: 'qwen/qwen3.8-27b',
         messages,
         temperature: options.temperature !== undefined ? options.temperature : 0.6,
         max_completion_tokens: options.max_tokens || 1500,
@@ -54,7 +54,7 @@ export async function askAiChat(messages, options = {}) {
         if (content) return content;
       }
     } catch (err) {
-      console.warn(`⚠️ Groq API (Qwen 3.6 27B) falhou: ${err.response?.data?.error?.message || err.message}`);
+      console.warn(`⚠️ Groq API (Qwen 3.8 27B) falhou: ${err.response?.data?.error?.message || err.message}`);
     }
   }
 
@@ -113,10 +113,10 @@ export async function askAiChat(messages, options = {}) {
     }
   }
 
-  // 4. Fallback final via Groq Fallback Key (Exclusivamente Qwen 3.6 27B)
+  // 4. Fallback final via Groq Fallback Key (Exclusivamente Qwen 3.8 27B)
   try {
     const payload = {
-      model: 'qwen/qwen3.6-27b',
+      model: 'qwen/qwen3.8-27b',
       messages,
       temperature: options.temperature !== undefined ? options.temperature : 0.6,
       max_completion_tokens: options.max_tokens || 1500,
@@ -141,7 +141,7 @@ export async function askAiChat(messages, options = {}) {
       if (content) return content;
     }
   } catch (err) {
-    console.warn(`⚠️ Groq Fallback (Qwen 3.6 27B) falhou:`, err.message);
+    console.warn(`⚠️ Groq Fallback (Qwen 3.8 27B) falhou:`, err.message);
   }
 
   throw new Error('Não foi possível obter resposta da Inteligência Artificial no momento.');

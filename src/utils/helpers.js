@@ -389,22 +389,80 @@ export async function downloadTiktokAudio(url) {
   }
 }
 
-// Busca e baixa vídeo do Instagram
+// Garante que o vídeo seja codificado em H.264 + AAC + yuv420p com +faststart para reproduzir perfeitamente no WhatsApp
+export async function ensureWhatsAppCompatibleVideo(inputPath) {
+  const outputPath = path.join(os.tmpdir(), `wa-compat-${Date.now()}.mp4`);
+  const bin = (fs.existsSync('/usr/bin/ffmpeg') ? '/usr/bin/ffmpeg' : (ffmpegPath || 'ffmpeg'));
+  
+  return new Promise((resolve) => {
+    execFile(
+      bin,
+      [
+        '-y',
+        '-i', inputPath,
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '24',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        outputPath
+      ],
+      { timeout: 90000 },
+      (error) => {
+        if (error) {
+          console.warn('⚠️ Transcodificação para WhatsApp ignorada/falhou, usando vídeo original:', error.message);
+          return resolve(inputPath);
+        }
+        try {
+          if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1000) {
+            try { fs.unlinkSync(inputPath); } catch (_) {}
+            return resolve(outputPath);
+          }
+        } catch (_) {}
+        resolve(inputPath);
+      }
+    );
+  });
+}
+
+// Busca e baixa vídeo do Instagram garantindo reprodução no WhatsApp
 export async function downloadInstagramVideo(url) {
   try {
-    const tmpFile = path.join(os.tmpdir(), `ig-video-${Date.now()}.mp4`);
+    // Remove parâmetros de rastreamento da URL (?igsh=..., etc.)
+    const cleanUrl = url.split('?')[0];
+    const tmpRawFile = path.join(os.tmpdir(), `ig-raw-${Date.now()}.mp4`);
+
     const specificArgs = [
-      '--format', 'mp4/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-      '--output', tmpFile
+      '--no-playlist',
+      '--force-ipv4',
+      '--geo-bypass',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      '--add-header', 'Referer:https://www.instagram.com/',
+      '--add-header', 'Accept-Language:en-US,en;q=0.9',
+      '--format', 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+      '--output', tmpRawFile
     ];
 
-    await downloadWithYtDlp(url, specificArgs);
+    if (ffmpegPath && fs.existsSync(ffmpegPath)) {
+      specificArgs.push('--ffmpeg-location', ffmpegPath);
+    }
+
+    if (fs.existsSync(COOKIES_PATH)) {
+      specificArgs.push('--cookies', COOKIES_PATH);
+    }
+
+    await runYtDlpExecFile([cleanUrl, ...specificArgs]);
+
+    // Transcodifica para H.264 + AAC + yuv420p para evitar o erro de 'vídeo não reproduz' no WhatsApp
+    const finalFile = await ensureWhatsAppCompatibleVideo(tmpRawFile);
 
     return {
-      filePath: tmpFile,
+      filePath: finalFile,
       title: 'Vídeo do Instagram',
       author: 'Instagram',
-      url
+      url: cleanUrl
     };
   } catch (error) {
     console.error('Erro no downloadInstagramVideo:', error);
@@ -415,21 +473,35 @@ export async function downloadInstagramVideo(url) {
 // Busca e baixa áudio do Instagram (MP3)
 export async function downloadInstagramAudio(url) {
   try {
+    const cleanUrl = url.split('?')[0];
     const tmpFile = path.join(os.tmpdir(), `ig-audio-${Date.now()}.mp3`);
     const specificArgs = [
+      '--no-playlist',
+      '--force-ipv4',
+      '--geo-bypass',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      '--add-header', 'Referer:https://www.instagram.com/',
       '--extract-audio',
       '--audio-format', 'mp3',
       '--audio-quality', '0',
       '--output', tmpFile
     ];
 
-    await downloadWithYtDlp(url, specificArgs);
+    if (ffmpegPath && fs.existsSync(ffmpegPath)) {
+      specificArgs.push('--ffmpeg-location', ffmpegPath);
+    }
+
+    if (fs.existsSync(COOKIES_PATH)) {
+      specificArgs.push('--cookies', COOKIES_PATH);
+    }
+
+    await runYtDlpExecFile([cleanUrl, ...specificArgs]);
 
     return {
       filePath: tmpFile,
       title: 'Áudio do Instagram',
       author: 'Instagram',
-      url
+      url: cleanUrl
     };
   } catch (error) {
     console.error('Erro no downloadInstagramAudio:', error);

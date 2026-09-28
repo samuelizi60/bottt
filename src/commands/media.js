@@ -461,6 +461,7 @@ export async function handleMediaCommands(sock, msg, command, args, sender) {
             from, 
             { 
               video: { url: video.filePath }, 
+              mimetype: 'video/mp4',
               caption: `🎥 *${video.title}*\n\nOrigem: Instagram`
             }, 
             { quoted: msg }
@@ -514,6 +515,7 @@ export async function handleMediaCommands(sock, msg, command, args, sender) {
           from, 
           { 
             video: { url: video.filePath }, 
+            mimetype: 'video/mp4',
             caption: `🎥 *${video.title}*\n\nOrigem: Instagram`
           }, 
           { quoted: msg }

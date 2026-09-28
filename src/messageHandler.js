@@ -338,7 +338,8 @@ export async function handleMessages(rawSock, msg) {
 
   console.log(`[COMANDO] ${command} executado por ${sender} no chat ${from}`);
 
-  try {    if (['menu', 'help', 'bot'].includes(command)) {
+  try {
+    if (['menu', 'help', 'bot'].includes(command)) {
       const uptimeSeconds = (Date.now() - (global.botStartTime || Date.now())) / 1000;
       const uptimeStr = formatUptime(uptimeSeconds);
       
@@ -346,83 +347,112 @@ export async function handleMessages(rawSock, msg) {
       const latency = ((Date.now() - (timestamp * 1000)) / 1000).toFixed(3);
       const velocityStr = latency < 0 ? '0.002' : latency;
 
-      const menuText = `╔═══════════════════════════╗\n` +
-                       ` ✨ WHATSAPP AUTOMATION BOT ✨ \n` +
-                       `╚═══════════════════════════╝\n` +
-                       `─── Comandos de Mídia & Downloads ───\n` +
-                       `「 🎵 」/play — baixar música (YouTube / TikTok / Instagram)\n` +
-                       `「 🎥 」/video — Baixar vídeo (YouTube / TikTok / Instagram)\n` +
-                       `「 🖼️ 」/sticker — Figurinha\n` +
-                       `「 🖼️ 」/unsticker — transforma sticker em imagem\n` +
-                       `「 👁️ 」/ver — revelar mídia de visualização única\n\n` +
-                       `─── Casamento & Social ───\n` +
-                       `「 💍 」/casar - pedir casamento\n` +
-                       `「 ✅ 」/aceitar - aceitar pedido\n` +
-                       `「 ❌ 」/recusar - recusar pedido\n` +
-                       `「 💔 」/divorcio - se divorciar\n` +
-                       `「 👤 」/perfil - ver status de casamento\n` +
-                       `「 🏳️‍🌈 」/gay - porcentagem\n` +
-                       `「 💖 」/romance - Compatibilidade\n` +
-                       `「 🐂 」/corno - teste de corno\n` +
-                       `「 👹 」/feio - medidor de feiura\n` +
-                       `「 🔥 」/gostoso - medidor de gostosura\n` +
-                       `「 🍺 」/bebado - nível de embriaguez\n` +
-                       `「 🙄 」/chato - medidor de chatice\n` +
-                       `「 🍀 」/sortudo - medidor de sorte\n` +
-                       `「 💋 」/beijo - dar um beijo em alguém\n` +
-                       `「 🖐️ 」/tapa - dar um tapa em alguém\n` +
-                       `「 🥛 」/mamada - mamada em alguém\n` +
-                       `「 💦 」/gozar - expressar pura emoção\n\n` +
-                       `─── Minigames & Cassino ───\n` +
-                       `「 🃏 」/blackjack (ou /21) — 21 contra a banca\n` +
-                       `「 ♠️ 」/poker — rodada de poker com apostas\n` +
-                       `「 🎰 」/cacaniquel (ou /slots) — caça-níqueis animado\n` +
-                       `「 🎣 」/pescar — pescar peixes e tesouros lendários\n\n` +
-                       `─── Diversão & Social ───\n` +
-                       `「 👩‍❤️‍👨 」/ship - medir afinidade de casal\n` +
-                       `「 🎱 」/8ball - bola 8 mágica de perguntas (IA)\n` +
-                       `「 🎲 」/dado - rolar dado (1 a 6)\n` +
-                       `「 🪙 」/caraoucoroa - cara ou coroa\n` +
-                       `「 🎮 」/ppt - pedra, papel e tesoura\n` +
-                       `「 💥 」/roleta - roleta russa animada\n` +
-                       `「 🧠 」/quiz - quiz de conhecimentos gerais (IA)\n` +
-                       `「 🎯 」/forca - jogo da forca\n` +
-                       `「 🃏 」/tarô - leitura mística de Tarô com IA\n` +
-                       `「 👍 」/rep — dar ponto de reputação a um membro\n\n` +
-                       `─── Administração do Grupo ───\n` +
-                       `「 🔨 」/ban - remover alguém do grupo (admin)\n` +
-                       `「 🚪 」/kick - expulsar membro do grupo\n` +
-                       `「 👑 」/promote - promover membro a admin\n` +
-                       `「 🛡️ 」/demote - rebaixar admin a membro\n` +
-                       `「 📢 」/tagall - marcar todos os membros\n` +
-                       `「 🔒 」/mute - fechar o grupo para admins\n` +
-                       `「 🔓 」/unmute - abrir o grupo para todos\n` +
-                       `「 🔗 」/antilink - ativar/desativar anti-link\n` +
-                       `「 🚫 」/antispam - ativar/desativar anti-spam\n` +
-                       `「 👋 」/boasvindas - ativar/desativar boas-vindas\n` +
-                       `「 📜 」/regras - ver ou definir regras do grupo\n` +
-                       `「 ⚠️ 」/warn - dar advertência a um membro\n` +
-                       `「 📋 」/warnings - ver advertências do membro\n` +
-                       `「 📊 」/enquete (ou /poll) — criar enquetes votáveis\n` +
-                       `「 🎫 」/ticket — abrir chamado de atendimento\n` +
-                       `「 🔑 」/adm - autorizar alguém a usar /ver (dono)\n` +
-                       `「 🚫 」/remover - remover autorização do /ver (dono)\n` +
-                       `「 🗑️ 」/antidel on/off - ativar/desativar anti-delete (dono)\n\n` +
-                       `─── Utilidades & Info ───\n` +
-                       `「 🏁 」/qrcode - gerar imagem de QR Code\n` +
-                       `「 🔍 」/readqr - ler QR Code de imagem\n` +
-                       `「 📮 」/cep - consultar endereço por CEP\n` +
-                       `「 ⏳ 」/fila — estatísticas de processamento do bot\n` +
-                       `「 🏓 」/ping — tempo de resposta do bot\n` +
-                       `「 ⏰ 」/uptime — tempo de atividade\n` +
-                       `「 ℹ️ 」/info — informações do sistema\n` +
-                       `「 🤖 」/botinfo — status do bot\n` +
-                       `「 👥 」/grupo — dados do grupo\n` +
-                       `══════════════════\n` +
-                       `🤖 Bot: WHATSAPP AUTOMATION BOT\n` +
-                       `⚡ Velocidade: ${velocityStr}s\n` +
-                       `🌙 Uptime: ${uptimeStr}\n` +
-                       `══════════════════`;
+      const userNumber = sender.split('@')[0];
+
+      // Saudação baseada no horário de Brasília (UTC-3)
+      const date = new Date(Date.now() - 3 * 3600 * 1000);
+      const hour = date.getUTCHours();
+      let greeting = '🌙 Boa noite';
+      if (hour >= 5 && hour < 12) greeting = '🌅 Bom dia';
+      else if (hour >= 12 && hour < 18) greeting = '☀️ Boa tarde';
+
+      const menuText = 
+`╭───「 *SERIE BOT* ⚡ 」───
+│ 
+│ ${greeting}, *@${userNumber}*!
+│
+│ 👑 *Prefixo:* [ ${prefix} ]
+│ ⚡ *Velocidade:* ${velocityStr}s
+│ 🕒 *Uptime:* ${uptimeStr}
+│ 🧠 *IA:* Qwen 3.8 27B (Groq)
+│
+╰─────────────────────
+
+╭───「 📥 *MÍDIA & DOWNLOADS* 」
+│ ◈ ${prefix}play <nome/link> — Baixar música
+│ ◈ ${prefix}video <nome/link> — Baixar vídeo
+│ ◈ ${prefix}ig <link> — Baixar Reels / Instagram
+│ ◈ ${prefix}tiktok <link> — Baixar TikTok sem marca
+│ ◈ ${prefix}sticker — Criar figurinha de imagem/vídeo
+│ ◈ ${prefix}unsticker — Converter figurinha em imagem
+│ ◈ ${prefix}ver — Revelar mídia de visualização única
+╰─────────────────────
+
+╭───「 ⚔️ *SISTEMA RPG & BATALHAS* 」
+│ ◈ ${prefix}classe <guerreiro|mago|arqueiro> — Escolher classe
+│ ◈ ${prefix}missao — Ver ou iniciar missões diárias
+│ ◈ ${prefix}raid — Participar da Raid contra o Chefe
+│ ◈ ${prefix}curar — Restaurar vida com poção ou descanso
+│ ◈ ${prefix}perfil — Ver status de batalha, nível e moedas
+╰─────────────────────
+
+╭───「 🎰 *CASSINO & MINIGAMES* 」
+│ ◈ ${prefix}blackjack <aposta> — Jogo 21 contra a banca
+│ ◈ ${prefix}poker <aposta> — Partida rápida de Poker
+│ ◈ ${prefix}slots <aposta> — Caça-níqueis animado
+│ ◈ ${prefix}pescar — Pescar peixes e itens raros
+╰─────────────────────
+
+╭───「 💍 *CASAMENTO & SOCIAL* 」
+│ ◈ ${prefix}casar @user — Fazer pedido de casamento
+│ ◈ ${prefix}aceitar — Aceitar pedido pendente
+│ ◈ ${prefix}recusar — Recusar pedido de casamento
+│ ◈ ${prefix}divorcio — Finalizar relacionamento
+│ ◈ ${prefix}perfil — Ver informações e cônjuge
+│ ◈ ${prefix}rep @user — Dar ponto de reputação (+1)
+│ ◈ ${prefix}beijo @user — Enviar um beijo animado
+│ ◈ ${prefix}tapa @user — Dar um tapa em alguém
+│ ◈ ${prefix}mamada @user — Brincadeira interativa
+│ ◈ ${prefix}gozar — Expressar pura emoção
+╰─────────────────────
+
+╭───「 🎮 *DIVERSÃO & JOGOS* 」
+│ ◈ ${prefix}ship @user1 @user2 — Calcular afinidade de casal
+│ ◈ ${prefix}8ball <pergunta> — Bola 8 mística com IA
+│ ◈ ${prefix}taro — Tiragem de cartas de Tarô com IA
+│ ◈ ${prefix}quiz — Pergunta de conhecimentos gerais
+│ ◈ ${prefix}forca — Desafio do jogo da forca
+│ ◈ ${prefix}roleta — Roleta russa em grupo
+│ ◈ ${prefix}ppt <pedra|papel|tesoura> — Jogo clássico
+│ ◈ ${prefix}dado — Rolar dado de 6 lados
+│ ◈ ${prefix}caraoucoroa <cara|coroa> — Teste sua sorte
+│ ◈ ${prefix}gay / ${prefix}corno / ${prefix}feio — Medidores zueira
+│ ◈ ${prefix}gostoso / ${prefix}bebado / ${prefix}sortudo
+╰─────────────────────
+
+╭───「 🛡️ *ADMINISTRAÇÃO DO GRUPO* 」
+│ ◈ ${prefix}ban @user — Banir membro do grupo
+│ ◈ ${prefix}kick @user — Remover membro do grupo
+│ ◈ ${prefix}promote @user — Promover a administrador
+│ ◈ ${prefix}demote @user — Rebaixar administrador
+│ ◈ ${prefix}tagall <aviso> — Marcar todos os membros
+│ ◈ ${prefix}mute / ${prefix}unmute — Fechar/abrir grupo
+│ ◈ ${prefix}antilink <on|off> — Filtro anti-links
+│ ◈ ${prefix}antispam <on|off> — Bloqueador de spam
+│ ◈ ${prefix}boasvindas <on|off> — Mensagem de boas-vindas
+│ ◈ ${prefix}regras — Visualizar ou definir regras
+│ ◈ ${prefix}warn @user — Aplicar advertência
+│ ◈ ${prefix}warnings @user — Consultar advertências
+│ ◈ ${prefix}enquete <título|op1|op2> — Criar enquete votável
+│ ◈ ${prefix}ticket — Abrir chamado de suporte
+│ ◈ ${prefix}antidel <on|off> — Anti-delete de mensagens (dono)
+│ ◈ ${prefix}adm @user — Autorizar uso do /ver (dono)
+╰─────────────────────
+
+╭───「 ⚙️ *UTILIDADES & INFORMAÇÕES* 」
+│ ◈ ${prefix}qrcode <texto> — Gerar imagem de QR Code
+│ ◈ ${prefix}readqr — Ler QR Code de imagem enviada
+│ ◈ ${prefix}cep <número> — Buscar endereço por CEP
+│ ◈ ${prefix}fila — Status da fila de processamento
+│ ◈ ${prefix}ping — Tempo de resposta e latência
+│ ◈ ${prefix}uptime — Tempo que o bot está ligado
+│ ◈ ${prefix}info / ${prefix}botinfo — Informações técnicas
+│ ◈ ${prefix}grupo — Detalhes do grupo atual
+╰─────────────────────
+
+💡 *Dica:* Digite o comando sem argumentos para ver exemplos de uso!
+✨ _Desenvolvido para máxima velocidade e diversão._`;
+
         const assetsDir = path.resolve('assets');
         let videoFiles = [];
 
@@ -447,22 +477,23 @@ export async function handleMessages(rawSock, msg) {
             return await sock.sendMessage(from, {
               video: fs.readFileSync(randomVideoPath),
               caption: menuText,
+              mentions: [sender],
               gifPlayback: true,
               mimetype: 'video/mp4'
             }, { quoted: msg });
           } catch (vidErr) {
             console.warn('⚠️ Falha ao enviar vídeo no menu, enviando como texto:', vidErr.message);
             try {
-              return await sock.sendMessage(from, { text: menuText }, { quoted: msg });
+              return await sock.sendMessage(from, { text: menuText, mentions: [sender] }, { quoted: msg });
             } catch (_) {
-              return await sock.sendMessage(from, { text: menuText });
+              return await sock.sendMessage(from, { text: menuText, mentions: [sender] });
             }
           }
         } else {
           try {
-            return await sock.sendMessage(from, { text: menuText }, { quoted: msg });
+            return await sock.sendMessage(from, { text: menuText, mentions: [sender] }, { quoted: msg });
           } catch (_) {
-            return await sock.sendMessage(from, { text: menuText });
+            return await sock.sendMessage(from, { text: menuText, mentions: [sender] });
           }
         }
     }
