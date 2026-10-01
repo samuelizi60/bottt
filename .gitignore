@@ -1,6 +1,7 @@
 node_modules/
 session/
 .env
+/cookies.txt
 qrcode.png
 *.png
 *.log
