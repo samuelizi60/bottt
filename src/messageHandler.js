@@ -48,6 +48,7 @@ import { handleGrupoCommand } from './commands/info/grupo.js';
 import { handleMinigamesCommands } from './commands/minigames.js';
 import { handleRpgSystemCommands } from './commands/rpg_system.js';
 import { handleGroupReputationCommands } from './commands/group_reputation.js';
+import { handleIaCommand } from './commands/ia.js';
 
 import queueManager from './queue/QueueManager.js';
 import { handleQueueStatsCommand } from './commands/admin_extra/queueStats.js';
@@ -500,8 +501,7 @@ export async function handleMessages(rawSock, msg) {
           } catch (_) {
             return await sock.sendMessage(from, { text: menuText, mentions: [sender] });
           }
-        }
-    }    else if (command === 'ia') {
+    } else if (command === 'ia') {
       await handleIaCommand(sock, msg, args);
     }
 
