@@ -1,3 +1,4 @@
+import { handleIaCommand } from './commands/ia.js';
 import path from 'path';
 import fs from 'fs';
 import { jidNormalizedUser, USyncQuery, USyncUser } from '@whiskeysockets/baileys';
@@ -378,6 +379,10 @@ export async function handleMessages(rawSock, msg) {
 │ ◈ ${prefix}ver — Revelar mídia de visualização única
 ╰─────────────────────
 
+╭───「 🔎 *INTELIGÊNCIA ARTIFICIAL* 」
+│ ◈ ${prefix}ia <pergunta> — Pesquisar na internet e responder com fontes
+╰─────────────────────
+
 ╭───「 ⚔️ *SISTEMA RPG & BATALHAS* 」
 │ ◈ ${prefix}classe <guerreiro|mago|arqueiro> — Escolher classe
 │ ◈ ${prefix}missao — Ver ou iniciar missões diárias
@@ -496,7 +501,10 @@ export async function handleMessages(rawSock, msg) {
             return await sock.sendMessage(from, { text: menuText, mentions: [sender] });
           }
         }
+    }    else if (command === 'ia') {
+      await handleIaCommand(sock, msg, args);
     }
+
     // Comandos Sociais
     else if (['casar', 'aceitar', 'recusar', 'divorcio', 'gay', 'romance', 'corno', 'feio', 'gostoso', 'bebado', 'chato', 'sortudo', 'beijo', 'tapa', 'mamada', 'gozar', 'perfil'].includes(command)) {
       await handleSocialCommands(sock, msg, command, args, sender, mentioned);
