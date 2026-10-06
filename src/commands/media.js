@@ -308,6 +308,14 @@ export async function handleMediaCommands(sock, msg, command, args, sender) {
         return reply('⚠️ Responda a uma mensagem de visualização única (foto ou vídeo) com /ver.');
       }
 
+      const mediaKey = viewOnceContent.mediaKey;
+      const mediaKeyLength = typeof mediaKey === 'string'
+        ? mediaKey.trim().length
+        : (mediaKey?.byteLength ?? mediaKey?.length ?? 0);
+      if (!mediaKey || mediaKeyLength === 0) {
+        return reply('⚠️ O WhatsApp não forneceu a chave necessária para abrir esta mídia. Peça para enviarem a foto ou o vídeo novamente.');
+      }
+
       await reply('⏳ Baixando mídia de visualização única, aguarde...');
 
       try {
@@ -338,6 +346,9 @@ export async function handleMediaCommands(sock, msg, command, args, sender) {
         // Deleta arquivo temporário
         try { fs.unlinkSync(filePath); } catch (_) {}
       } catch (error) {
+        if (error?.message?.includes('Cannot derive from empty media key')) {
+          return reply('⚠️ O WhatsApp não forneceu a chave necessária para abrir esta mídia. Peça para enviarem a foto ou o vídeo novamente.');
+        }
         console.error('Erro ao revelar visualização única:', error);
         return reply('⚠️ Erro ao tentar baixar e revelar a mídia.');
       }

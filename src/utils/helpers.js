@@ -50,7 +50,11 @@ export async function downloadWhatsAppMedia(message, messageType) {
     fs.writeFileSync(tempFile, buffer);
     return tempFile;
   } catch (error) {
-    console.error('Erro ao baixar mídia do WhatsApp:', error);
+    if (error?.message?.includes('Cannot derive from empty media key')) {
+      console.warn('A mídia recebida não contém uma mediaKey disponível.');
+    } else {
+      console.error('Erro ao baixar mídia do WhatsApp:', error);
+    }
     throw error;
   }
 }
