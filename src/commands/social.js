@@ -1,4 +1,5 @@
 import { getDatabase, updateDatabase } from '../database.js';
+import { generateMeterComment } from '../utils/meterComments.js';
 
 // Função auxiliar para formatar tempo de casamento
 function formatDuration(ms) {
@@ -125,15 +126,10 @@ export async function handleSocialCommands(sock, msg, command, args, sender, men
     case 'gay': {
       const target = mentioned[0] || sender;
       const targetName = target.split('@')[0];
-      // Gerar porcentagem aleatória
       const pct = Math.floor(Math.random() * 101);
-      
-      let desc = 'Hetero puro! 🥖';
-      if (pct > 20) desc = 'Um pouquinho suspeito... 🤔';
-      if (pct > 50) desc = 'Já está saindo do armário! 🌈';
-      if (pct > 80) desc = 'Gay assumidíssimo! 🏳️‍🌈✨';
+      const desc = await generateMeterComment('gay', pct, targetName);
 
-      return reply(`🏳️‍🌈 *TESTE GAY*\n\n@${targetName} é *${pct}%* gay!\nStatus: ${desc}`, [target]);
+      return reply(`🏳️‍🌈 *TESTE GAY*\n\n• @${targetName} é *${pct}%* gay!\n\n${desc}`, [target]);
     }
 
     case 'romance': {
@@ -146,19 +142,15 @@ export async function handleSocialCommands(sock, msg, command, args, sender, men
         return reply('⚠️ Você não pode calcular romance com você mesmo!');
       }
 
-      // Gerar compatibilidade consistente baseada nos JIDs (para ser engraçado/fixo)
+      const senderName = sender.split('@')[0];
+      const targetName = target.split('@')[0];
       const combined = (sender + target).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
       const pct = combined % 101;
-      
-      let msgRomance = '';
-      if (pct < 20) msgRomance = 'Melhor continuarem apenas conhecidos... 🥶';
-      else if (pct < 50) msgRomance = 'Amizade é o caminho seguro. 🤝';
-      else if (pct < 80) msgRomance = 'Tem química! Rolaria um clima. 😏';
-      else msgRomance = 'Almas gêmeas! Casamento à vista! 💍💖';
+      const msgRomance = await generateMeterComment('romance', pct, senderName, targetName);
 
       return reply(`💖 *TESTE DE COMPATIBILIDADE* 💖\n\n` +
-                   `• @${sender.split('@')[0]}\n` +
-                   `• @${target.split('@')[0]}\n\n` +
+                   `• @${senderName}\n` +
+                   `• @${targetName}\n\n` +
                    `Compatibilidade: *${pct}%*\n\n${msgRomance}`, [sender, target]);
     }
 
@@ -166,78 +158,54 @@ export async function handleSocialCommands(sock, msg, command, args, sender, men
       const target = mentioned[0] || sender;
       const targetName = target.split('@')[0];
       const pct = Math.floor(Math.random() * 101);
-      
-      let desc = 'Fiel e seguro(a)! 😇';
-      if (pct > 20) desc = 'Desconfie dos amigos próximos... 🤔';
-      if (pct > 50) desc = 'O chifre já tá rasgando o teto! 🐂';
-      if (pct > 80) desc = 'Rei/Rainha do gado! Precisa passar na porta de lado! 🐮👑';
+      const desc = await generateMeterComment('corno', pct, targetName);
 
-      return reply(`🐂 *TESTE DE CORNO*\n\n@${targetName} é *${pct}%* corno(a)!\nStatus: ${desc}`, [target]);
+      return reply(`🐂 *TESTE DE CORNO*\n\n• @${targetName} é *${pct}%* corno(a)!\n\n${desc}`, [target]);
     }
 
     case 'feio': {
       const target = mentioned[0] || sender;
       const targetName = target.split('@')[0];
       const pct = Math.floor(Math.random() * 101);
-      
-      let desc = 'Um colírio para os olhos! ✨';
-      if (pct > 20) desc = 'Passável se apagar a luz... 👀';
-      if (pct > 50) desc = 'Assusta até o espelho! 🪞💥';
-      if (pct > 80) desc = 'Só a mãe ama! Nível Shrek! 🧌';
+      const desc = await generateMeterComment('feio', pct, targetName);
 
-      return reply(`👹 *MEDIDOR DE FEIURA*\n\n@${targetName} é *${pct}%* feio(a)!\nStatus: ${desc}`, [target]);
+      return reply(`👹 *MEDIDOR DE FEIURA*\n\n• @${targetName} é *${pct}%* feio(a)!\n\n${desc}`, [target]);
     }
 
     case 'gostoso': {
       const target = mentioned[0] || sender;
       const targetName = target.split('@')[0];
       const pct = Math.floor(Math.random() * 101);
-      
-      let desc = 'Precisa melhorar essa skin... 😅';
-      if (pct > 20) desc = 'Na média, dá pro gasto! 😉';
-      if (pct > 50) desc = 'Um espetáculo da natureza! 🔥';
-      if (pct > 80) desc = 'Modelo internacional! Perfeição pura! 💎🔥';
+      const desc = await generateMeterComment('gostoso', pct, targetName);
 
-      return reply(`🔥 *MEDIDOR DE GOSTOSURA*\n\n@${targetName} é *${pct}%* gostoso(a)!\nStatus: ${desc}`, [target]);
+      return reply(`🔥 *MEDIDOR DE GOSTOSURA*\n\n• @${targetName} é *${pct}%* gostoso(a)!\n\n${desc}`, [target]);
     }
 
     case 'bebado': {
       const target = mentioned[0] || sender;
       const targetName = target.split('@')[0];
       const pct = Math.floor(Math.random() * 101);
-      
-      let desc = 'Sobriedade total, bebeu só água! 💧';
-      if (pct > 20) desc = 'Meio alegre, já tá falando alto! 🍻';
-      if (pct > 50) desc = 'Tropeçando nas pernas e mandando áudio pro ex! 🍺🥴';
-      if (pct > 80) desc = 'Perdeu a noção, abraçando o vaso sanitário! 🍾🤪';
+      const desc = await generateMeterComment('bebado', pct, targetName);
 
-      return reply(`🍺 *MEDIDOR DE EMBRIAGUEZ*\n\n@${targetName} está *${pct}%* bêbado(a)!\nStatus: ${desc}`, [target]);
+      return reply(`🍺 *MEDIDOR DE EMBRIAGUEZ*\n\n• @${targetName} está *${pct}%* bêbado(a)!\n\n${desc}`, [target]);
     }
 
     case 'chato': {
       const target = mentioned[0] || sender;
       const targetName = target.split('@')[0];
       const pct = Math.floor(Math.random() * 101);
-      
-      let desc = 'Gente boa demais, um amor de pessoa! ❤️';
-      if (pct > 20) desc = 'Às vezes dá uma irritada, mas é suportável. 🥱';
-      if (pct > 50) desc = 'Insuportável! Ninguém aguenta 5 minutos de conversa! 🙄';
-      if (pct > 80) desc = 'Nível supremo de chatice! Nem o Bot aguenta! 🗣️❌';
+      const desc = await generateMeterComment('chato', pct, targetName);
 
-      return reply(`🙄 *MEDIDOR DE CHATICE*\n\n@${targetName} é *${pct}%* chato(a)!\nStatus: ${desc}`, [target]);
+      return reply(`🙄 *MEDIDOR DE CHATICE*\n\n• @${targetName} é *${pct}%* chato(a)!\n\n${desc}`, [target]);
     }
 
     case 'sortudo': {
       const target = mentioned[0] || sender;
       const targetName = target.split('@')[0];
       const pct = Math.floor(Math.random() * 101);
-      
-      let desc = 'A azaração em pessoa, se chover nescau o dente cai! ⚡';
-      if (pct > 20) desc = 'Sorte normal do dia a dia. 🍀';
-      if (pct > 50) desc = 'Hoje o dia tá para peixe! ✨';
-      if (pct > 80) desc = 'Ganhou na loteria da vida! Abençoado(a)! 🎰💎';
+      const desc = await generateMeterComment('sortudo', pct, targetName);
 
-      return reply(`🍀 *MEDIDOR DE SORTE*\n\n@${targetName} é *${pct}%* sortudo(a)!\nStatus: ${desc}`, [target]);
+      return reply(`🍀 *MEDIDOR DE SORTE*\n\n• @${targetName} é *${pct}%* sortudo(a)!\n\n${desc}`, [target]);
     }
 
     case 'beijo': {
