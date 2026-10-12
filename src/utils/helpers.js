@@ -87,52 +87,66 @@ function runYtDlpExecFile(args) {
   });
 }
 
-// Sincroniza cookies vindos da variável de ambiente YOUTUBE_COOKIES (se existir)
-function syncYoutubeCookiesFromEnv() {
-  if (!process.env.YOUTUBE_COOKIES || !process.env.YOUTUBE_COOKIES.trim()) return;
-  try {
-    let rawCookies = process.env.YOUTUBE_COOKIES.trim();
-    // Suporte a Base64 (recomendado no Railway para evitar quebras em tabs e quebras de linha)
-    if (!rawCookies.includes('\t') && !rawCookies.includes('# Netscape') && rawCookies.length > 50) {
-      try {
-        const decoded = Buffer.from(rawCookies, 'base64').toString('utf-8');
-        if (decoded.includes('youtube.com') || decoded.includes('Netscape')) {
-          rawCookies = decoded;
-          console.log('[yt-dlp] Cookies decodificados de Base64 com sucesso.');
-        }
-      } catch (_) {}
+// Sanitiza e valida o arquivo cookies.txt
+function ensureValidCookiesFile() {
+  if (process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.trim()) {
+    try {
+      let rawCookies = process.env.YOUTUBE_COOKIES.trim();
+      // Suporte a Base64
+      if (!rawCookies.includes('\t') && !rawCookies.includes('# Netscape') && rawCookies.length > 50) {
+        try {
+          const decoded = Buffer.from(rawCookies, 'base64').toString('utf-8');
+          if (decoded.includes('youtube.com') || decoded.includes('Netscape')) {
+            rawCookies = decoded;
+            console.log('[yt-dlp] Cookies decodificados de Base64 com sucesso.');
+          }
+        } catch (_) {}
+      }
+      if (rawCookies.includes('\\n')) {
+        rawCookies = rawCookies.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+      }
+      if (rawCookies.includes('youtube.com')) {
+        const dir = path.dirname(COOKIES_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(COOKIES_PATH, rawCookies, 'utf-8');
+        console.log(`[yt-dlp] ✅ Cookies do YouTube sincronizados em ${COOKIES_PATH}`);
+      }
+    } catch (err) {
+      console.error('❌ Erro ao escrever YOUTUBE_COOKIES no cookies.txt:', err);
     }
-    // Trata quebras de linha e tabs escapadas
-    if (rawCookies.includes('\\n')) {
-      rawCookies = rawCookies.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
-    }
-
-    const dir = path.dirname(COOKIES_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(COOKIES_PATH, rawCookies, 'utf-8');
-    console.log(`[yt-dlp] ✅ Cookies do YouTube sincronizados em ${COOKIES_PATH} (${rawCookies.length} bytes).`);
-  } catch (err) {
-    console.error('❌ Erro ao escrever YOUTUBE_COOKIES no cookies.txt:', err);
   }
+
+  // Se o cookies.txt existente no disco contiver Base64 cru, decodifica automaticamente
+  try {
+    if (fs.existsSync(COOKIES_PATH)) {
+      const content = fs.readFileSync(COOKIES_PATH, 'utf-8');
+      if (!content.includes('Netscape') && !content.includes('\t') && content.length > 50) {
+        try {
+          const decoded = Buffer.from(content.trim(), 'base64').toString('utf-8');
+          if (decoded.includes('youtube.com') || decoded.includes('Netscape')) {
+            fs.writeFileSync(COOKIES_PATH, decoded, 'utf-8');
+            console.log('[yt-dlp] ✅ Arquivo cookies.txt foi corrigido decodificando Base64.');
+          }
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
 }
-syncYoutubeCookiesFromEnv();
+ensureValidCookiesFile();
 
 // Adiciona diretório do deno ao PATH se existir
 if (fs.existsSync('/root/.deno/bin') && !process.env.PATH.includes('/root/.deno/bin')) {
   process.env.PATH = `/root/.deno/bin:${process.env.PATH}`;
 }
 
-// Verifica se há cookies válidos configurados (via ENV ou no cookies.txt)
+// Verifica se há cookies estritamente válidos no formato Netscape
 function checkValidCookies() {
-  if (process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.trim().length > 50) {
-    return true;
-  }
   try {
     if (fs.existsSync(COOKIES_PATH) && fs.statSync(COOKIES_PATH).size > 100) {
       const content = fs.readFileSync(COOKIES_PATH, 'utf-8');
-      return content.includes('youtube.com') && (content.includes('SID') || content.includes('LOGIN_INFO') || content.includes('SAPISID'));
+      const isNetscape = content.includes('Netscape') || content.includes('# HTTP Cookie File');
+      const hasYoutubeTokens = content.includes('youtube.com') && (content.includes('SID') || content.includes('LOGIN_INFO') || content.includes('SAPISID'));
+      return isNetscape && hasYoutubeTokens;
     }
   } catch (_) {}
   return false;

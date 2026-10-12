@@ -5,26 +5,18 @@
 set -e
 
 mkdir -p /data/session /data/backups
-touch /data/cookies.txt
 
-# Se YOUTUBE_COOKIES foi definido nas variáveis do Railway, sincroniza diretamente para /data/cookies.txt
-if [ -n "$YOUTUBE_COOKIES" ]; then
-  echo "Syncing YOUTUBE_COOKIES env var to persistent storage..."
-  if echo "$YOUTUBE_COOKIES" | base64 -d >/dev/null 2>&1; then
-    echo "$YOUTUBE_COOKIES" | base64 -d > /data/cookies.txt 2>/dev/null || printf "%b\n" "$YOUTUBE_COOKIES" > /data/cookies.txt
-  else
-    printf "%b\n" "$YOUTUBE_COOKIES" > /data/cookies.txt
+# Se cookies.txt estiver presente no build e o de /data não existir ou estiver corrompido (sem Netscape), restaura da imagem
+if [ -f "/app/cookies.txt" ] && [ ! -L "/app/cookies.txt" ]; then
+  if [ ! -f "/data/cookies.txt" ] || ! grep -q "Netscape" "/data/cookies.txt" 2>/dev/null; then
+    echo "Restaurando /data/cookies.txt valido a partir da imagem..."
+    cp -f "/app/cookies.txt" "/data/cookies.txt"
   fi
 fi
 
 # On first boot (volume empty), migrate data from image to /data
-for item in session bot_data.sqlite bot_data.json database.json cookies.txt user_facts.json backups; do
-  if [ "$item" = "cookies.txt" ] && [ -f "/app/$item" ] && [ ! -L "/app/$item" ]; then
-    if ! cmp -s "/app/$item" "/data/$item"; then
-      echo "Updating $item in persistent volume..."
-      cp -f "/app/$item" "/data/$item"
-    fi
-  elif [ ! -e "/data/$item" ] && [ -e "/app/$item" ]; then
+for item in session bot_data.sqlite bot_data.json database.json user_facts.json backups; do
+  if [ ! -e "/data/$item" ] && [ -e "/app/$item" ]; then
     echo "Migrating $item to persistent volume..."
     cp -r "/app/$item" "/data/$item"
   fi
