@@ -5,6 +5,17 @@
 set -e
 
 mkdir -p /data/session /data/backups
+touch /data/cookies.txt
+
+# Se YOUTUBE_COOKIES foi definido nas variáveis do Railway, sincroniza diretamente para /data/cookies.txt
+if [ -n "$YOUTUBE_COOKIES" ]; then
+  echo "Syncing YOUTUBE_COOKIES env var to persistent storage..."
+  if echo "$YOUTUBE_COOKIES" | base64 -d >/dev/null 2>&1; then
+    echo "$YOUTUBE_COOKIES" | base64 -d > /data/cookies.txt 2>/dev/null || printf "%b\n" "$YOUTUBE_COOKIES" > /data/cookies.txt
+  else
+    printf "%b\n" "$YOUTUBE_COOKIES" > /data/cookies.txt
+  fi
+fi
 
 # On first boot (volume empty), migrate data from image to /data
 for item in session bot_data.sqlite bot_data.json database.json cookies.txt user_facts.json backups; do

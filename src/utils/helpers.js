@@ -88,13 +88,36 @@ function runYtDlpExecFile(args) {
 }
 
 // Sincroniza cookies vindos da variável de ambiente YOUTUBE_COOKIES (se existir)
-if (process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.trim()) {
+function syncYoutubeCookiesFromEnv() {
+  if (!process.env.YOUTUBE_COOKIES || !process.env.YOUTUBE_COOKIES.trim()) return;
   try {
-    fs.writeFileSync(COOKIES_PATH, process.env.YOUTUBE_COOKIES.trim(), 'utf-8');
+    let rawCookies = process.env.YOUTUBE_COOKIES.trim();
+    // Suporte a Base64 (recomendado no Railway para evitar quebras em tabs e quebras de linha)
+    if (!rawCookies.includes('\t') && !rawCookies.includes('# Netscape') && rawCookies.length > 50) {
+      try {
+        const decoded = Buffer.from(rawCookies, 'base64').toString('utf-8');
+        if (decoded.includes('youtube.com') || decoded.includes('Netscape')) {
+          rawCookies = decoded;
+          console.log('[yt-dlp] Cookies decodificados de Base64 com sucesso.');
+        }
+      } catch (_) {}
+    }
+    // Trata quebras de linha e tabs escapadas
+    if (rawCookies.includes('\\n')) {
+      rawCookies = rawCookies.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+    }
+
+    const dir = path.dirname(COOKIES_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(COOKIES_PATH, rawCookies, 'utf-8');
+    console.log(`[yt-dlp] ✅ Cookies do YouTube sincronizados em ${COOKIES_PATH} (${rawCookies.length} bytes).`);
   } catch (err) {
-    console.error('Erro ao escrever YOUTUBE_COOKIES no cookies.txt:', err);
+    console.error('❌ Erro ao escrever YOUTUBE_COOKIES no cookies.txt:', err);
   }
 }
+syncYoutubeCookiesFromEnv();
 
 // Adiciona diretório do deno ao PATH se existir
 if (fs.existsSync('/root/.deno/bin') && !process.env.PATH.includes('/root/.deno/bin')) {
