@@ -9,6 +9,8 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 
+import { DEFAULT_COOKIES } from './defaultCookies.js';
+
 // Caminho base para encontrar o cookies.txt na raiz do projeto
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,15 +61,27 @@ export async function downloadWhatsAppMedia(message, messageType) {
   }
 }
 
+// Determina o melhor binário do yt-dlp disponível
+function getBestYtDlpPath() {
+  if (fs.existsSync('/usr/local/bin/yt-dlp')) {
+    return '/usr/local/bin/yt-dlp';
+  }
+  if (process.platform !== 'win32') {
+    // Tenta yt-dlp global
+    return 'yt-dlp';
+  }
+  if (fs.existsSync(ytdl.constants.YOUTUBE_DL_PATH)) {
+    return ytdl.constants.YOUTUBE_DL_PATH;
+  }
+  return 'yt-dlp';
+}
+
 // Executa o binário do yt-dlp com garantias de permissão e suporte a fallback de cookies
 function runYtDlpExecFile(args) {
   return new Promise((resolve, reject) => {
-    let ytDlpPath = ytdl.constants.YOUTUBE_DL_PATH;
-    
-    // Verifica se o binário local existe; se não existir, tenta o yt-dlp do sistema (PATH)
-    if (!fs.existsSync(ytDlpPath)) {
-      ytDlpPath = 'yt-dlp';
-    } else if (process.platform !== 'win32') {
+    const ytDlpPath = getBestYtDlpPath();
+
+    if (process.platform !== 'win32' && fs.existsSync(ytDlpPath)) {
       try {
         fs.chmodSync(ytDlpPath, '755');
       } catch (_) {}
@@ -89,10 +103,38 @@ function runYtDlpExecFile(args) {
 
 // Sanitiza e valida o arquivo cookies.txt
 function ensureValidCookiesFile() {
+  const dir = path.dirname(COOKIES_PATH);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  let needsDefault = false;
+  if (!fs.existsSync(COOKIES_PATH)) {
+    needsDefault = true;
+  } else {
+    try {
+      const existing = fs.readFileSync(COOKIES_PATH, 'utf-8');
+      if (existing.length < 200 || !existing.includes('Netscape')) {
+        needsDefault = true;
+      }
+    } catch (_) {
+      needsDefault = true;
+    }
+  }
+
+  if (needsDefault && DEFAULT_COOKIES) {
+    try {
+      fs.writeFileSync(COOKIES_PATH, DEFAULT_COOKIES, 'utf-8');
+      console.log(`[yt-dlp] ✅ cookies.txt inicializado com sucesso (${DEFAULT_COOKIES.length} bytes).`);
+    } catch (err) {
+      console.error('Erro ao escrever DEFAULT_COOKIES:', err);
+    }
+  }
+
+  // Se houver variável YOUTUBE_COOKIES válida, sincroniza
   if (process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.trim()) {
     try {
       let rawCookies = process.env.YOUTUBE_COOKIES.trim();
-      // Suporte a Base64
       if (!rawCookies.includes('\t') && !rawCookies.includes('# Netscape') && rawCookies.length > 50) {
         try {
           const decoded = Buffer.from(rawCookies, 'base64').toString('utf-8');
@@ -105,32 +147,14 @@ function ensureValidCookiesFile() {
       if (rawCookies.includes('\\n')) {
         rawCookies = rawCookies.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
       }
-      if (rawCookies.includes('youtube.com')) {
-        const dir = path.dirname(COOKIES_PATH);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      if (rawCookies.includes('youtube.com') && rawCookies.includes('Netscape')) {
         fs.writeFileSync(COOKIES_PATH, rawCookies, 'utf-8');
-        console.log(`[yt-dlp] ✅ Cookies do YouTube sincronizados em ${COOKIES_PATH}`);
+        console.log(`[yt-dlp] ✅ Cookies do YouTube sincronizados a partir de YOUTUBE_COOKIES.`);
       }
     } catch (err) {
       console.error('❌ Erro ao escrever YOUTUBE_COOKIES no cookies.txt:', err);
     }
   }
-
-  // Se o cookies.txt existente no disco contiver Base64 cru, decodifica automaticamente
-  try {
-    if (fs.existsSync(COOKIES_PATH)) {
-      const content = fs.readFileSync(COOKIES_PATH, 'utf-8');
-      if (!content.includes('Netscape') && !content.includes('\t') && content.length > 50) {
-        try {
-          const decoded = Buffer.from(content.trim(), 'base64').toString('utf-8');
-          if (decoded.includes('youtube.com') || decoded.includes('Netscape')) {
-            fs.writeFileSync(COOKIES_PATH, decoded, 'utf-8');
-            console.log('[yt-dlp] ✅ Arquivo cookies.txt foi corrigido decodificando Base64.');
-          }
-        } catch (_) {}
-      }
-    }
-  } catch (_) {}
 }
 ensureValidCookiesFile();
 
@@ -142,10 +166,11 @@ if (fs.existsSync('/root/.deno/bin') && !process.env.PATH.includes('/root/.deno/
 // Verifica se há cookies estritamente válidos no formato Netscape
 function checkValidCookies() {
   try {
+    ensureValidCookiesFile();
     if (fs.existsSync(COOKIES_PATH) && fs.statSync(COOKIES_PATH).size > 100) {
       const content = fs.readFileSync(COOKIES_PATH, 'utf-8');
       const isNetscape = content.includes('Netscape') || content.includes('# HTTP Cookie File');
-      const hasYoutubeTokens = content.includes('youtube.com') && (content.includes('SID') || content.includes('LOGIN_INFO') || content.includes('SAPISID'));
+      const hasYoutubeTokens = content.includes('youtube.com');
       return isNetscape && hasYoutubeTokens;
     }
   } catch (_) {}
@@ -159,7 +184,8 @@ function buildBaseArgs(withCookies = true, clientOverride = null) {
   const args = [
     '--no-playlist',
     '--force-ipv4',
-    '--geo-bypass'
+    '--geo-bypass',
+    '--js-runtimes', 'node'
   ];
 
   // Configura User-Agent coerente com o tipo de cliente para evitar detecção de spoofing

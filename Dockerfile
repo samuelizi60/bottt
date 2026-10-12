@@ -9,10 +9,13 @@ RUN apt-get update && apt-get install -y \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Instala o Deno (JS Runtime nativo recomendado pelo yt-dlp 2026 para resolver EJS/desafios do YouTube)
+# Instala o Deno e a versão mais recente do binário oficial do yt-dlp
 RUN curl -fsSL https://deno.land/install.sh | sh
 ENV DENO_INSTALL="/root/.deno"
 ENV PATH="$DENO_INSTALL/bin:$PATH"
+
+# Instala a versão oficial mais recente do yt-dlp diretamente do GitHub
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && chmod a+rx /usr/local/bin/yt-dlp
 
 WORKDIR /app
 
