@@ -1,14 +1,13 @@
 {
   "name": "serie-bot-whatsapp",
   "version": "1.0.0",
-  "description": "Bot de WhatsApp multi-funções completo baseado no Baileys",
+  "description": "Bot WhatsApp multi-funções",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "@distube/ytdl-core": "^4.16.12",
     "@whiskeysockets/baileys": "^6.7.9",
     "axios": "^1.7.2",
     "dotenv": "^16.4.5",
@@ -19,9 +18,7 @@
     "pino": "^9.1.0",
     "play-dl": "^1.9.7",
     "qrcode": "^1.5.4",
-    "sqlJs": "^1.14.1",
-    "waStickerFormatter": "^4.4.4",
-    "youtubeDlExec": "^3.1.9",
-    "ytSearch": "^2.12.1"
+    "ytSearch": "^2.12.1",
+    "playDl": "^1.9.7"
   }
 }
