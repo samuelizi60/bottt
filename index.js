@@ -1,159 +1,91 @@
-import 'dotenv/config';
-import fs from 'fs';
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys';
-import pino from 'pino';
-import qrcode from 'qrcode-terminal';
-import QRCode from 'qrcode';
-import http from 'http';
-import { loadDatabase } from './src/database.js';
-import { initSqlite } from './src/database/sqlite.js';
-import { handleMessages } from './src/messageHandler.js';
-import queueManager from './src/queue/QueueManager.js';
+const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
+const qrcode = require("qrcode-terminal");
+const ytdl = require("ytdl-core");
+const ytSearch = require("yt-search");
+const axios = require("axios");
+const ffmpeg = require("fluent-ffmpeg");
 
-// Cache global de tentativas de retry para evitar loops de mensagens não descriptografadas
-const msgRetryCounterCache = new Map();
+const client = new Client({ authStrategy: new LocalAuth() });
 
-// Marca o horário de início do bot
-global.botStartTime = Date.now();
+client.on("ready", () => { console.log("Bot WhatsApp pronto!"); });
 
-// Servidor HTTP leve para responder aos health-checks do Fly.io e servir o QR Code no navegador
-const HTTP_PORT = process.env.PORT || 8080;
-const server = http.createServer((req, res) => {
-  if (req.url === '/qr' || req.url === '/qr.png') {
-    if (fs.existsSync('./qrcode.png')) {
-      res.writeHead(200, { 'Content-Type': 'image/png' });
-      return fs.createReadStream('./qrcode.png').pipe(res);
-    } else {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return res.end('<h3>Bot já conectado ou gerando QR Code... Recarregue em alguns segundos.</h3>');
-    }
-  }
-
-  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify({
-    status: 'online',
-    name: 'Bot WhatsApp',
-    uptime_seconds: Math.floor(process.uptime()),
-    timestamp: new Date().toISOString(),
-    qr_code_url: '/qr'
-  }));
-});
-
-server.listen(HTTP_PORT, () => {
-  console.log(`🌐 Servidor HTTP de monitoramento ativo na porta ${HTTP_PORT}`);
-});
-
-async function startBot() {
-  // Carrega banco de dados local centralizado
-  await loadDatabase();
-  await initSqlite();
-
-  const logger = pino({ level: 'silent' });
-
-  // Define diretório de sessão para salvar as credenciais de autenticação
-  const { state, saveCreds } = await useMultiFileAuthState('session');
-
-  // Obtém a versão mais recente suportada do WhatsApp Web para evitar erros de handshake (como 405)
-  let version;
-  try {
-    const latest = await fetchLatestBaileysVersion();
-    version = latest.version;
-    console.log(`🌐 Usando a versão do WhatsApp Web: v${version.join('.')}`);
-  } catch (err) {
-    console.warn('⚠️ Não foi possível buscar a versão mais recente do WA Web, usando padrão interno do Baileys.', err);
-  }
-
-  // Inicializa o socket do Baileys com cache de chaves Signal e tratamento de retries
-  const rawSock = makeWASocket({
-    version,
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger)
-    },
-    logger,
-    browser: ['Mac OS', 'Chrome', '10.15.7'], // Perfil de navegador compativel com WA Business
-    markOnlineOnConnect: true,
-    syncFullHistory: false,
-    generateHighQualityLinkPreview: true,
-    msgRetryCounterCache,
-    getMessage: async (key) => {
-      return { conversation: 'Bot WhatsApp' };
-    }
-  });
-
-  const sock = queueManager.wrapSocket(rawSock);
-
-  // Atualiza as credenciais sempre que houver mudança (ex: conexão estabelecida)
-  sock.ev.on('creds.update', saveCreds);
-
-  // Monitora alterações na conexão
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    // Se o QR Code estiver disponível no update
-    if (qr) {
-      console.log('\n✨ ESCANEIE O QR CODE ABAIXO COM O WHATSAPP DO SEU CELULAR:');
-      qrcode.generate(qr, { small: true });
-      console.log('Dica: Abra o WhatsApp > Configurações/Três Pontinhos > Dispositivos Conectados > Conectar um Dispositivo.\n');
-      
-      // Salva o QR Code como arquivo de imagem para evitar problemas de visualização em telas pequenas ou desconfigurações do terminal
-      QRCode.toFile('./qrcode.png', qr, (err) => {
-        if (err) {
-          console.error('Erro ao salvar o QR Code em arquivo de imagem:', err);
-        } else {
-          console.log('📂 Um arquivo chamado "qrcode.png" foi gerado na pasta do seu bot de WhatsApp.');
-          console.log('Caso o QR Code acima esteja cortado ou muito grande na sua tela, abra o arquivo "qrcode.png" que está na pasta do seu bot e escaneie o QR Code pela imagem!\n');
-        }
-      });
+client.on("message", async message => {
+    const txt = message.body.toLowerCase();
+    
+    if (txt === "/menu") {
+        await message.reply("*MENU DE OPÇÕES*\n\n" +
+            "• /play <nome/link> — Baixar música\n" +
+            "• /video <nome/link> — Baixar vídeo\n" +
+            "• /ig <link> — Baixar Reels / Instagram\n" +
+            "• /tiktok <link> — Baixar TikTok sem marca\n" +
+            "• /sticker — Criar figurinha de imagem/vídeo\n" +
+            "• /unsticker — Converter figurinha em imagem\n" +
+            "• /ver — Revelar mídia de visualização única");
+        return;
     }
 
-    if (connection === 'close') {
-      // Determina se deve tentar reconectar
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      
-      console.log(`🔌 Conexão fechada. Código: ${statusCode}. Reconectando: ${shouldReconnect}`);
-      
-      if (shouldReconnect) {
-        // Tenta reconectar após 3 segundos
-        setTimeout(() => startBot(), 3000);
-      } else {
-        console.log('❌ A sessão antiga foi deslogada pelo WhatsApp. Limpando credenciais antigas para novo login...');
+    if (txt.startsWith("/play")) {
+        const query = txt.replace("/play", "").trim();
+        if (!query) { await message.reply("Por favor, forneça um nome ou link após o /play"); return; }
+        await message.reply("Baixando música...");
         try {
-          if (fs.existsSync('session')) {
-            fs.rmSync('session', { recursive: true, force: true });
-          }
-          fs.mkdirSync('session', { recursive: true });
-        } catch (e) {
-          console.error('Erro ao limpar pasta session:', e.message);
-        }
-        setTimeout(() => startBot(), 3000);
-      }
-    } else if (connection === 'open') {
-      console.log('\n╔════════════════════════════════════════╗');
-      console.log('║ 🤖 SERIE BOT CONECTADO COM SUCESSO!     ║');
-      console.log('║                                        ║');
-      console.log('║ Digite os comandos no WhatsApp para    ║');
-      console.log('║ interagir com o bot.                   ║');
-      console.log('╚════════════════════════════════════════╝\n');
+            let video;
+            if (query.startsWith("http")) { video = ytdl.getInfo(query); }
+            else { const results = await ytSearch(query); video = results.videos.length > 0 ? results.videos[0] : null; if (!video) { await message.reply("Não encontrei nenhum vídeo com esse nome."); return; } }
+            const info = await video; const stream = ytdl(info.videoId, { quality: "highest" }); const media = MessageMedia.fromFileStream(stream.path, "audio/mpeg"); await message.reply(media, null, { sendMedia: true });
+        } catch (err) { console.error(err); await message.reply("Erro ao baixar a música. Tente novamente."); }
+        return;
     }
-  });
 
-  // Escuta novas mensagens recebidas (suporte a mensagens de notificação e append no PV)
-  sock.ev.on('messages.upsert', async (m) => {
-    if (m.type === 'notify' || m.type === 'append') {
-      for (const msg of m.messages) {
+    if (txt.startsWith("/video")) {
+        const query = txt.replace("/video", "").trim();
+        if (!query) { await message.reply("Por favor, forneça um nome ou link após o /video"); return; }
+        await message.reply("Baixando vídeo...");
         try {
-          await handleMessages(sock, msg);
-        } catch (err) {
-          console.error('Erro ao processar mensagem no loop principal:', err);
-        }
-      }
+            let video;
+            if (query.startsWith("http")) { video = ytdl.getInfo(query); }
+            else { const results = await ytSearch(query); video = results.videos.length > 0 ? results.videos[0] : null; if (!video) { await message.reply("Não encontrei nenhum vídeo com esse nome."); return; } }
+            const info = await video; const stream = ytdl(info.videoId, { quality: "highest" }); const media = MessageMedia.fromFileStream(stream.path, "video/mp4"); await message.reply(media, null, { sendMedia: true });
+        } catch (err) { console.error(err); await message.reply("Erro ao baixar o vídeo. Tente novamente."); }
+        return;
     }
-  });
-}
 
-// Inicia o bot
-startBot().catch(err => {
-  console.error('Erro ao iniciar o bot:', err);
+    if (txt.startsWith("/ig")) {
+        const link = txt.replace("/ig", "").trim();
+        if (!link) { await message.reply("Por favor, forneça um link do Instagram após o /ig"); return; }
+        await message.reply("Baixando Reels/Post do Instagram...");
+        try { const res = await axios.get("https://api.likan.xyz/dl/ig?url=" + encodeURIComponent(link)); if (res.data && res.data.url) { const media = MessageMedia.fromFileStream(res.data.url, "video/mp4"); await message.reply(media, null, { sendMedia: true }); } else { await message.reply("Não foi possível baixar o conteúdo do Instagram."); } } catch (err) { console.error(err); await message.reply("Erro ao baixar do Instagram. Tente novamente."); }
+        return;
+    }
+
+    if (txt.startsWith("/tiktok")) {
+        const link = txt.replace("/tiktok", "").trim();
+        if (!link) { await message.reply("Por favor, forneça um link do TikTok após o /tiktok"); return; }
+        await message.reply("Baixando vídeo do TikTok...");
+        try { const res = await axios.get("https://api.likan.xyz/dl/tiktok?url=" + encodeURIComponent(link)); if (res.data && res.data.url) { const media = MessageMedia.fromFileStream(res.data.url, "video/mp4"); await message.reply(media, null, { sendMedia: true }); } else { await message.reply("Não foi possível baixar o conteúdo do TikTok."); } } catch (err) { console.error(err); await message.reply("Erro ao baixar do TikTok. Tente novamente."); }
+        return;
+    }
+
+    if (txt === "/sticker") {
+        if (!message.hasMedia) { await message.reply("Por favor, envie uma imagem ou vídeo para criar a figurinha."); return; }
+        await message.reply("Criando figurinha...");
+        try { const media = await message.downloadMedia(); if (media.mimetype.startsWith("image")) { const stickerPath = "/tmp/sticker_" + Date.now() + ".webp"; await new Promise((resolve, reject) => { ffmpeg(media.path).outputOptions(["-vcodec","libwebp","-lossless","1"]).on("end",resolve).on("error",reject).saveToFile(stickerPath); }); const stickerMsg = MessageMedia.fromFileStream(stickerPath, "image/webp"); await message.reply(stickerMsg); require("fs").unlinkSync(stickerPath); } else if (media.mimetype.startsWith("video")) { const stickerPath = "/tmp/sticker_" + Date.now() + ".webm"; await new Promise((resolve, reject) => { ffmpeg(media.path).outputOptions(["-vcodec","libwebp","-"]).on("end",resolve).on("error",reject).saveToFile(stickerPath); }); const stickerMsg = MessageMedia.fromFileStream(stickerPath, "image/webp"); await message.reply(stickerMsg); require("fs").unlinkSync(stickerPath); } } catch (err) { console.error(err); await message.reply("Erro ao criar a figurinha."); }
+        return;
+    }
+
+    if (txt === "/unsticker") {
+        if (!message.hasMedia) { await message.reply("Por favor, envie uma figurinha (.webp) para converter."); return; }
+        await message.reply("Convertendo figurinha em imagem...");
+        try { const media = await message.downloadMedia(); if (media.mimetype === "image/webp") { const imgPath = "/tmp/unsticker_" + Date.now() + ".png"; await new Promise((resolve, reject) => { ffmpeg(media.path).outputOptions(["-vf","format=rgba","-compress"]).on("end",resolve).on("error",reject).saveToFile(imgPath); }); const imgMsg = MessageMedia.fromFileStream(imgPath, "image/png"); await message.reply(imgMsg); require("fs").unlinkSync(imgPath); } else { await message.reply("A mídia enviada não é uma figurinha WebP."); } } catch (err) { console.error(err); await message.reply("Erro ao converter a figurinha."); }
+        return;
+    }
+
+    if (txt === "/ver") {
+        if (!message.hasMedia) { await message.reply("Por favor, envie uma mídia para visualizar."); return; }
+        await message.reply("Enviando mídia de visualização única...");
+        try { const media = await message.downloadMedia(); const singleViewMsg = MessageMedia.fromFileStream(media.path, media.mimetype); await message.reply(singleViewMsg); } catch (err) { console.error(err); await message.reply("Erro ao processar a mídia."); }
+        return;
+    }
 });
+
+client.initialize();
