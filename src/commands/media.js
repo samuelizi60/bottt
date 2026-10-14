@@ -378,7 +378,8 @@ export async function handleMediaCommands(sock, msg, command, args, sender) {
           return;
         } catch (error) {
           console.error('Erro ao baixar áudio do TikTok via /play:', error);
-          return reply('⚠️ Erro ao baixar áudio do TikTok.');
+          const detail = error?.message ? ` (${error.message.slice(0, 120)})` : '';
+          return reply(`⚠️ Erro ao baixar áudio do TikTok${detail}.`);
         } finally {
           if (music?.filePath && fs.existsSync(music.filePath)) {
             try { fs.unlinkSync(music.filePath); } catch (_) {}
@@ -460,7 +461,8 @@ export async function handleMediaCommands(sock, msg, command, args, sender) {
           return;
         } catch (error) {
           console.error('Erro ao baixar vídeo do TikTok via /video:', error);
-          return reply('⚠️ Erro ao baixar vídeo do TikTok.');
+          const detail = error?.message ? ` (${error.message.slice(0, 120)})` : '';
+          return reply(`⚠️ Erro ao baixar vídeo do TikTok${detail}. Verifique se o link é público e tente novamente.`);
         }
       }
 
@@ -590,7 +592,8 @@ export async function handleMediaCommands(sock, msg, command, args, sender) {
         fs.unlinkSync(video.filePath);
       } catch (error) {
         console.error('Erro ao baixar vídeo do TikTok:', error);
-        return reply('⚠️ Erro ao baixar vídeo do TikTok. Verifique o link e tente novamente.');
+        const detail = error?.message ? ` (${error.message.slice(0, 120)})` : '';
+        return reply(`⚠️ Erro ao baixar vídeo do TikTok${detail}. Verifique o link e tente novamente.`);
       }
       break;
     }
@@ -618,7 +621,8 @@ export async function handleMediaCommands(sock, msg, command, args, sender) {
         fs.unlinkSync(music.filePath);
       } catch (error) {
         console.error('Erro ao baixar áudio do TikTok:', error);
-        return reply('⚠️ Erro ao baixar áudio do TikTok. Verifique o link e tente novamente.');
+        const detail = error?.message ? ` (${error.message.slice(0, 120)})` : '';
+        return reply(`⚠️ Erro ao baixar áudio do TikTok${detail}. Verifique o link e tente novamente.`);
       }
       break;
     }

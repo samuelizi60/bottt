@@ -654,94 +654,142 @@ export async function downloadYoutubeVideo(query) {
 
 // Busca e baixa vídeo do TikTok sem marca d'água
 export async function downloadTiktokVideo(url) {
+  // 1) TikWM: tenta play (sem marca) -> hdplay -> wmplay, com headers de
+  // navegador (o CDN do TikTok costuma dar 403 em IP de datacenter sem eles)
   try {
     const apiRes = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`, { timeout: 15000 });
     const resData = apiRes.data;
 
-    if (resData && resData.code === 0 && resData.data?.play) {
-      const videoUrl = resData.data.play;
+    if (resData && resData.code === 0 && (resData.data?.play || resData.data?.hdplay || resData.data?.wmplay)) {
       const title = resData.data.title || 'Vídeo do TikTok';
       const author = resData.data.author?.nickname || resData.data.author?.unique_id || 'TikTok User';
-
-      const videoRes = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 30000 });
-      const tmpFile = path.join(os.tmpdir(), `tt-video-${Date.now()}.mp4`);
-      fs.writeFileSync(tmpFile, Buffer.from(videoRes.data));
-
-      return {
-        filePath: tmpFile,
-        title,
-        author,
-        url
-      };
+      const candidates = [resData.data.play, resData.data.hdplay, resData.data.wmplay].filter(Boolean);
+      let lastErr = null;
+      for (const videoUrl of candidates) {
+        try {
+          const tmpFile = path.join(os.tmpdir(), `tt-video-${Date.now()}.mp4`);
+          await downloadStreamToFile(videoUrl, tmpFile, 'https://www.tiktok.com/');
+          if (!fs.existsSync(tmpFile) || fs.statSync(tmpFile).size < 1000) {
+            throw new Error('arquivo baixado vazio ou inválido');
+          }
+          console.log('[download] ✅ Vídeo do TikTok via TikWM');
+          return { filePath: tmpFile, title, author, url };
+        } catch (err) {
+          lastErr = err;
+          console.warn(`⚠️ TikWM CDN falhou (${String(videoUrl).slice(0, 60)}...): ${err.message?.slice(0, 100)}`);
+        }
+      }
+      if (lastErr) throw lastErr;
+    } else {
+      console.warn('⚠️ TikWM não resolveu o link:', resData?.msg || JSON.stringify(resData)?.slice(0, 120));
     }
   } catch (err) {
-    console.warn('⚠️ Falha no TikWM API para vídeo, tentando via yt-dlp...', err.message);
+    console.warn('⚠️ Falha no TikWM API para vídeo, tentando Cobalt...', err.message?.slice(0, 120));
   }
 
-  // Fallback via yt-dlp
+  // 2) Cobalt (bom suporte a TikTok)
   try {
-    const tmpFile = path.join(os.tmpdir(), `tt-video-${Date.now()}.mp4`);
+    return await downloadViaCobalt({ url, title: 'Vídeo do TikTok', author: 'TikTok' }, 'video');
+  } catch (err) {
+    console.warn('⚠️ Cobalt falhou no TikTok, tentando via yt-dlp...', err.message?.slice(0, 120));
+  }
+
+  // 3) Fallback via yt-dlp (com verificação do arquivo de saída)
+  try {
+    const tmpBase = path.join(os.tmpdir(), `tt-video-${Date.now()}`);
     const specificArgs = [
-      '--format', 'mp4',
-      '--output', tmpFile
+      '--format', 'best[ext=mp4]/best',
+      '--merge-output-format', 'mp4',
+      '--output', `${tmpBase}.mp4`
     ];
     await downloadWithYtDlp(url, specificArgs);
+    const produced = [`${tmpBase}.mp4`].find((f) => fs.existsSync(f) && fs.statSync(f).size > 1000)
+      || fs.readdirSync(os.tmpdir()).map((f) => path.join(os.tmpdir(), f))
+        .find((f) => f.startsWith(`${tmpBase}.`) && fs.statSync(f).size > 1000);
+    if (!produced) throw new Error('yt-dlp concluiu mas não gerou arquivo de vídeo');
     return {
-      filePath: tmpFile,
+      filePath: produced,
       title: 'Vídeo do TikTok',
       author: 'TikTok',
       url
     };
   } catch (error) {
-    console.error('Erro no downloadTiktokVideo:', error);
-    throw new Error('Não foi possível baixar o vídeo do TikTok.');
+    console.error('Erro no downloadTiktokVideo (todas as fontes falharam):', error.message?.slice(0, 200));
+    throw new Error(`Não foi possível baixar o vídeo do TikTok (${(error.message || '').slice(0, 100)}). O link pode ser privado/restrito ou o TikTok bloqueou o IP do servidor.`);
   }
 }
 
 // Busca e baixa áudio do TikTok (MP3)
 export async function downloadTiktokAudio(url) {
+  // 1) TikWM (music -> play), com headers de navegador
   try {
     const apiRes = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`, { timeout: 15000 });
     const resData = apiRes.data;
 
     if (resData && resData.code === 0 && (resData.data?.music || resData.data?.play)) {
-      const audioUrl = resData.data.music || resData.data.play;
       const title = resData.data.title || resData.data.music_info?.title || 'Áudio do TikTok';
       const author = resData.data.author?.nickname || 'TikTok';
-
-      const audioRes = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 30000 });
-      const tmpFile = path.join(os.tmpdir(), `tt-audio-${Date.now()}.mp3`);
-      fs.writeFileSync(tmpFile, Buffer.from(audioRes.data));
-
-      return {
-        filePath: tmpFile,
-        title,
-        author,
-        url
-      };
+      const candidates = [resData.data.music, resData.data.play].filter(Boolean);
+      let lastErr = null;
+      for (const audioUrl of candidates) {
+        try {
+          const rawTmp = path.join(os.tmpdir(), `tt-raw-${Date.now()}.tmp`);
+          await downloadStreamToFile(audioUrl, rawTmp, 'https://www.tiktok.com/');
+          const tmpFile = path.join(os.tmpdir(), `tt-audio-${Date.now()}.mp3`);
+          try {
+            await convertToMp3(rawTmp, tmpFile);
+            try { fs.unlinkSync(rawTmp); } catch (_) {}
+          } catch (_) {
+            fs.renameSync(rawTmp, tmpFile);
+          }
+          if (!fs.existsSync(tmpFile) || fs.statSync(tmpFile).size < 1000) {
+            throw new Error('arquivo baixado vazio ou inválido');
+          }
+          console.log('[download] ✅ Áudio do TikTok via TikWM');
+          return { filePath: tmpFile, title, author, url };
+        } catch (err) {
+          lastErr = err;
+          console.warn(`⚠️ TikWM áudio falhou: ${err.message?.slice(0, 100)}`);
+        }
+      }
+      if (lastErr) throw lastErr;
+    } else {
+      console.warn('⚠️ TikWM não resolveu o link de áudio:', resData?.msg || JSON.stringify(resData)?.slice(0, 120));
     }
   } catch (err) {
-    console.warn('⚠️ Falha no TikWM API para áudio, tentando via yt-dlp...', err.message);
+    console.warn('⚠️ Falha no TikWM API para áudio, tentando Cobalt...', err.message?.slice(0, 120));
   }
 
-  // Fallback via yt-dlp
+  // 2) Cobalt
   try {
-    const tmpFile = path.join(os.tmpdir(), `tt-audio-${Date.now()}.mp3`);
+    return await downloadViaCobalt({ url, title: 'Áudio do TikTok', author: 'TikTok' }, 'audio');
+  } catch (err) {
+    console.warn('⚠️ Cobalt falhou no áudio do TikTok, tentando via yt-dlp...', err.message?.slice(0, 120));
+  }
+
+  // 3) Fallback via yt-dlp (com verificação do arquivo de saída)
+  try {
+    const tmpBase = path.join(os.tmpdir(), `tt-audio-${Date.now()}`);
     const specificArgs = [
       '--extract-audio',
       '--audio-format', 'mp3',
-      '--output', tmpFile
+      '--audio-quality', '0',
+      '--output', `${tmpBase}.mp3`
     ];
     await downloadWithYtDlp(url, specificArgs);
+    const produced = [`${tmpBase}.mp3`].find((f) => fs.existsSync(f) && fs.statSync(f).size > 1000)
+      || fs.readdirSync(os.tmpdir()).map((f) => path.join(os.tmpdir(), f))
+        .find((f) => f.startsWith(`${tmpBase}.`) && fs.statSync(f).size > 1000);
+    if (!produced) throw new Error('yt-dlp concluiu mas não gerou arquivo de áudio');
     return {
-      filePath: tmpFile,
+      filePath: produced,
       title: 'Áudio do TikTok',
       author: 'TikTok',
       url
     };
   } catch (error) {
-    console.error('Erro no downloadTiktokAudio:', error);
-    throw new Error('Não foi possível baixar o áudio do TikTok.');
+    console.error('Erro no downloadTiktokAudio (todas as fontes falharam):', error.message?.slice(0, 200));
+    throw new Error(`Não foi possível baixar o áudio do TikTok (${(error.message || '').slice(0, 100)}).`);
   }
 }
 
