@@ -390,6 +390,8 @@ export async function handleMessages(rawSock, msg) {
 │ ◈ ${prefix}ig <link> — Baixar Reels / Instagram
 │ ◈ ${prefix}tiktok <link> — Baixar TikTok sem marca
 │ ◈ ${prefix}sticker — Criar figurinha de imagem/vídeo
+│ ◈ ${prefix}sticker2 — Figurinha com proporção original (sem distorcer)
+│ ◈ ${prefix}sticker3 — Figurinha preenchida, maior e sem bordas
 │ ◈ ${prefix}unsticker — Converter figurinha em imagem
 │ ◈ ${prefix}ver — Revelar mídia de visualização única
 ╰─────────────────────
@@ -529,7 +531,7 @@ export async function handleMessages(rawSock, msg) {
       await handleAdminCommands(sock, msg, command, args, sender, mentioned);
     } 
     // Comandos de Mídia (Downloads/Stickers)
-    else if (['sticker', 'unsticker', 'ver', 'play', 'video', 'tiktok', 'ttvideo', 'tiktokaudio', 'ttplay', 'ig', 'insta', 'igvideo', 'igaudio', 'instavideo', 'instaaudio', 'igplay'].includes(command)) {
+    else if (['sticker', 'sticker2', 'sticker3', 'unsticker', 'ver', 'play', 'video', 'tiktok', 'ttvideo', 'tiktokaudio', 'ttplay', 'ig', 'insta', 'igvideo', 'igaudio', 'instavideo', 'instaaudio', 'igplay'].includes(command)) {
       await queueManager.enqueueHeavyCommand(from, command, () => handleMediaCommands(sock, msg, command, args, sender));
     }
     // 👥 Administração Adicional

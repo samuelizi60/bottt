@@ -108,6 +108,102 @@ function convertWebpToMp4(inputPath) {
   });
 }
 
+// Detecta se a mensagem citada é de visualização única (qualquer wrapper)
+function isViewOnceQuoted(quoted) {
+  if (!quoted || typeof quoted !== 'object') return false;
+  if (quoted.viewOnceMessage || quoted.viewOnceMessageV2 || quoted.viewOnceMessageV2Extension) return true;
+  // Wrapper aninhado um nível (ex: ephemeralMessage envolvendo view-once)
+  for (const key of ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension', 'documentWithCaptionMessage']) {
+    const inner = quoted[key]?.message || quoted[key];
+    if (inner && typeof inner === 'object' && (inner.viewOnceMessage || inner.viewOnceMessageV2 || inner.viewOnceMessageV2Extension)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Extrai imagem (direta ou citada) para figurinha.
+// Retorna { mediaMessage } ou { error: 'VIEWONCE' | 'VIDEO' | 'NONE' }.
+// Mídia de visualização única é SEMPRE recusada aqui: só o /ver
+// (restrito a autorizados) pode revelá-la.
+export function extractStickerImage(msg) {
+  const from = msg.key.remoteJid;
+
+  if (msg.message?.imageMessage) {
+    return { mediaMessage: msg };
+  }
+  if (msg.message?.videoMessage) {
+    return { error: 'VIDEO' };
+  }
+
+  const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+  if (!quoted) return { error: 'NONE' };
+
+  if (isViewOnceQuoted(quoted)) {
+    return { error: 'VIEWONCE' };
+  }
+
+  if (quoted.imageMessage) {
+    return {
+      mediaMessage: {
+        key: {
+          remoteJid: from,
+          id: msg.message.extendedTextMessage.contextInfo.stanzaId,
+          participant: msg.message.extendedTextMessage.contextInfo.participant
+        },
+        message: quoted
+      }
+    };
+  }
+  if (quoted.videoMessage) {
+    return { error: 'VIDEO' };
+  }
+  return { error: 'NONE' };
+}
+
+// Converte imagem em figurinha WebP 512x512 preservando a proporção
+// (o /sticker padrão estica a imagem — por isso sai "torta").
+// mode 'fit': imagem inteira, sem corte, com fundo transparente (padrão do WhatsApp).
+// mode 'fill': preenche tudo (corte central), sem bordas — figurinha maior.
+function convertImageToSticker(inputPath, mode = 'fit', quality = 85) {
+  const outputPath = path.join(os.tmpdir(), `sticker-${mode}-${Date.now()}-${Math.floor(Math.random() * 1e6)}.webp`);
+  const vf = mode === 'fill'
+    ? 'scale=512:512:force_original_aspect_ratio=increase,crop=512:512'
+    : 'scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000';
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-y',
+      '-i', inputPath,
+      '-vf', vf,
+      '-vcodec', 'libwebp',
+      '-lossless', '0',
+      '-quality', String(quality),
+      '-preset', 'picture',
+      '-an',
+      outputPath
+    ];
+    execFile(ffmpegPath, args, (err) => {
+      if (err) return reject(err);
+      try {
+        const buffer = fs.readFileSync(outputPath);
+        try { fs.unlinkSync(outputPath); } catch (_) {}
+        resolve(buffer);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+}
+
+// Converte com fallback de qualidade para respeitar o limite do WhatsApp (~500KB)
+export async function convertImageToStickerSized(inputPath, mode) {
+  let buffer = await convertImageToSticker(inputPath, mode, 85);
+  if (buffer.length > 450 * 1024) {
+    buffer = await convertImageToSticker(inputPath, mode, 60);
+  }
+  return buffer;
+}
+
 export async function handleMediaCommands(sock, msg, command, args, sender) {
   const from = msg.key.remoteJid;
   const reply = async (text) => {
@@ -136,6 +232,10 @@ export async function handleMediaCommands(sock, msg, command, args, sender) {
         // Verifica a mensagem citada
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         if (quoted) {
+          // 🔒 Visualização única não vira figurinha (só o /ver restrito revela)
+          if (isViewOnceQuoted(quoted)) {
+            return reply('🔒 Mídia de visualização única não pode virar figurinha. Ela só pode ser revelada com /ver (restrito).');
+          }
           if (quoted.imageMessage) {
             mediaMessage = {
               key: {
@@ -195,6 +295,39 @@ export async function handleMediaCommands(sock, msg, command, args, sender) {
       } catch (error) {
         console.error('Erro ao criar sticker:', error);
         return reply('⚠️ Não foi possível criar a figurinha. Certifique-se de que a imagem ou vídeo é válido.');
+      }
+      break;
+    }
+
+    case 'sticker2':
+    case 'sticker3': {
+      // sticker2 = imagem inteira com proporção original (fundo transparente)
+      // sticker3 = preenche tudo com corte central (maior, sem bordas)
+      const mode = command === 'sticker2' ? 'fit' : 'fill';
+      const res = extractStickerImage(msg);
+
+      if (res.error === 'VIEWONCE') {
+        return reply('🔒 Mídia de visualização única não pode virar figurinha. Ela só pode ser revelada com /ver (restrito).');
+      }
+      if (res.error === 'VIDEO') {
+        return reply('⚠️ O comando /' + command + ' funciona apenas com imagens. Para vídeos curtos use /sticker.');
+      }
+      if (res.error || !res.mediaMessage) {
+        return reply('⚠️ Envie uma imagem com o comando /' + command + ' na legenda, ou responda a uma imagem com o comando.');
+      }
+
+      await reply('⏳ Criando sua figurinha, aguarde...');
+
+      try {
+        const filePath = await downloadWhatsAppMedia(res.mediaMessage, 'image');
+        const buffer = await convertImageToStickerSized(filePath, mode);
+
+        try { fs.unlinkSync(filePath); } catch (_) {}
+
+        await sock.sendMessage(from, { sticker: buffer }, { quoted: msg });
+      } catch (error) {
+        console.error(`Erro ao criar ${command}:`, error);
+        return reply('⚠️ Não foi possível criar a figurinha. Certifique-se de que a imagem é válida.');
       }
       break;
     }
