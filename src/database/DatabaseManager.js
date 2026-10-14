@@ -2,12 +2,8 @@ import 'dotenv/config';
 import initSqlJs from 'sql.js';
 import path from 'path';
 import fs from 'fs';
+import { DB_PATH, LEGACY_JSON_PATH, BOT_DATA_JSON_PATH, BACKUPS_DIR, ensureDataDir } from '../config/paths.js';
 import { ECONOMIC_LIMITS, sanitizeMoney, sanitizeXP, sanitizeAura, checkEconomicLimit } from '../utils/economicValidation.js';
-
-const DB_PATH = path.resolve('bot_data.sqlite');
-const LEGACY_JSON_PATH = path.resolve('database.json');
-const BOT_DATA_JSON_PATH = path.resolve('bot_data.json');
-const BACKUPS_DIR = path.resolve('backups');
 
 const KNOWN_USER_KEYS = [
   'jid', 'wallet', 'bank', 'xp', 'level', 'aura',
@@ -68,6 +64,16 @@ class DatabaseManager {
       }
 
       this.log('Backup concluído.');
+      // Rotação simples: mantém os 20 backups mais recentes (volume finito)
+      try {
+        const files = fs.readdirSync(BACKUPS_DIR)
+          .filter((f) => f.startsWith('backup-'))
+          .map((f) => ({ f, t: fs.statSync(path.join(BACKUPS_DIR, f)).mtimeMs }))
+          .sort((a, b) => b.t - a.t);
+        for (const old of files.slice(20)) {
+          try { fs.unlinkSync(path.join(BACKUPS_DIR, old.f)); } catch (_) {}
+        }
+      } catch (_) {}
       return true;
     } catch (err) {
       this.logErr('Falha ao criar backup:', err);
@@ -78,6 +84,9 @@ class DatabaseManager {
   // --- INICIALIZAÇÃO ---
   async initialize() {
     if (this.isInitialized) return;
+
+    // Garante diretório de dados (volume persistente quando DATA_DIR definido)
+    ensureDataDir();
 
     // 1. Backup antes de qualquer migração/carregamento
     this.createBackup();

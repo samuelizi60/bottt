@@ -7,14 +7,10 @@ import yts from 'yt-search';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { fileURLToPath } from 'url';
+
+import { COOKIES_PATH } from '../config/paths.js';
 
 import { DEFAULT_COOKIES } from './defaultCookies.js';
-
-// Caminho base para encontrar o cookies.txt na raiz do projeto
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const COOKIES_PATH = path.resolve(__dirname, '../../cookies.txt');
 
 // Instâncias públicas do Piped (busca + streams sem bloqueio de datacenter).
 // A ordem importa: tenta a primeira que responder. Instâncias do Piped

@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "reset-session": "node -e \"import('fs').then(f => { f.rmSync('session', { recursive: true, force: true }); console.log('✅ Pasta session limpa com sucesso!'); })\""
+    "reset-session": "node -e \"const d=process.env.DATA_DIR||'.';import('fs').then(f=>{f.rmSync(d+'/session',{recursive:true,force:true});console.log('Pasta session limpa com sucesso!');})\""
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",

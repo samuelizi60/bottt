@@ -7,6 +7,7 @@ import QRCode from 'qrcode';
 import http from 'http';
 import { loadDatabase } from './src/database.js';
 import { initSqlite } from './src/database/sqlite.js';
+import { ensureDataDir, SESSION_DIR, IS_PERSISTENT, DATA_DIR } from './src/config/paths.js';
 import { handleMessages } from './src/messageHandler.js';
 import queueManager from './src/queue/QueueManager.js';
 
@@ -44,6 +45,11 @@ server.listen(HTTP_PORT, () => {
 });
 
 async function startBot() {
+  // Prepara diretório de dados (no Railway com volume: mantém sessão e
+  // banco entre deploys; sem volume, comporta-se como antes)
+  ensureDataDir();
+  if (IS_PERSISTENT) console.log(`💾 Persistência em volume: ${DATA_DIR}`);
+
   // Carrega banco de dados local centralizado
   await loadDatabase();
   await initSqlite();
@@ -51,7 +57,7 @@ async function startBot() {
   const logger = pino({ level: 'silent' });
 
   // Define diretório de sessão para salvar as credenciais de autenticação
-  const { state, saveCreds } = await useMultiFileAuthState('session');
+  const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
 
   // Obtém a versão mais recente suportada do WhatsApp Web para evitar erros de handshake (como 405)
   let version;
@@ -120,10 +126,10 @@ async function startBot() {
       } else {
         console.log('❌ A sessão antiga foi deslogada pelo WhatsApp. Limpando credenciais antigas para novo login...');
         try {
-          if (fs.existsSync('session')) {
-            fs.rmSync('session', { recursive: true, force: true });
+          if (fs.existsSync(SESSION_DIR)) {
+            fs.rmSync(SESSION_DIR, { recursive: true, force: true });
           }
-          fs.mkdirSync('session', { recursive: true });
+          fs.mkdirSync(SESSION_DIR, { recursive: true });
         } catch (e) {
           console.error('Erro ao limpar pasta session:', e.message);
         }

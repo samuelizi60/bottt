@@ -8,8 +8,9 @@ import fs from 'fs';
 import path from 'path';
 import { conversationMemory } from './ConversationMemory.js';
 import { getUser, updateUser } from '../database/sqlite.js';
+import { FACTS_PATH } from '../config/paths.js';
 
-const FACTS_FILE = path.resolve('user_facts.json');
+const FACTS_FILE = FACTS_PATH;
 
 // Memória local em arquivo JSON para persistência de fatos rápidos
 let userFactsStore = {};
