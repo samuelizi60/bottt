@@ -16,6 +16,92 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const COOKIES_PATH = path.resolve(__dirname, '../../cookies.txt');
 
+// Instâncias públicas do Piped (busca + streams sem bloqueio de datacenter).
+// A ordem importa: tenta a primeira que responder. Instâncias do Piped
+// caem/voltem com frequência — por isso há descoberta dinâmica abaixo e
+// validação de streams (respostas só com espelho LBRY são descartadas).
+// Sobrescreva com PIPED_INSTANCES="https://...,https://..." no .env.
+const PIPED_INSTANCES = (process.env.PIPED_INSTANCES
+  ? process.env.PIPED_INSTANCES.split(',').map((s) => s.trim()).filter(Boolean)
+  : [
+      'https://api.piped.private.coffee',
+      'https://pipedapi.adminforge.de',
+      'https://pipedapi.reallyaweso.me',
+      'https://pipedapi.kavin.rocks',
+      'https://pipedapi.leptons.xyz',
+      'https://pipedapi-libre.kavin.rocks',
+      'https://piped-api.privacy.com.de',
+      'https://api.piped.yt',
+      'https://pipedapi.owo.si',
+      'https://pipedapi.ducks.party',
+      'https://piped-api.codespace.cz',
+      'https://pipedapi.nosebs.ru',
+      'https://pipedapi.orangenet.cc',
+      'https://pipedapi.darkness.services',
+    ]);
+
+// Cache da descoberta dinâmica de instâncias (evita 1 request por comando)
+let pipedDiscoveryCache = { at: 0, list: [] };
+
+// Tenta descobrir instâncias saudáveis via API pública do Piped.
+// Best-effort: se falhar, usa a lista estática acima.
+async function discoverPipedInstances() {
+  const now = Date.now();
+  if (now - pipedDiscoveryCache.at < 6 * 60 * 60 * 1000 && pipedDiscoveryCache.list.length) {
+    return pipedDiscoveryCache.list;
+  }
+  try {
+    const res = await axios.get('https://piped-instances.kavin.rocks/filtered', { timeout: 8000 });
+    const live = (Array.isArray(res.data) ? res.data : [])
+      .filter((i) => i?.api_url)
+      .map((i) => i.api_url.replace(/\/$/, ''));
+    if (live.length) {
+      pipedDiscoveryCache = { at: now, list: live };
+      console.log(`[piped] 🔍 Descobertas ${live.length} instâncias saudáveis.`);
+      return live;
+    }
+  } catch (err) {
+    console.warn(`⚠️ Descoberta de instâncias Piped falhou, usando lista estática: ${err.message?.slice(0, 80)}`);
+  }
+  return [];
+}
+
+async function getPipedBases() {
+  const discovered = await discoverPipedInstances();
+  const merged = [...discovered];
+  for (const b of PIPED_INSTANCES) {
+    if (!merged.includes(b)) merged.push(b);
+  }
+  return merged;
+}
+
+// Streams vindos de espelho LBRY (odycdn) não são o áudio original do
+// YouTube e costumam falhar — só aceita googlevideo ou proxy do Piped.
+function isUsableStreamUrl(url = '') {
+  if (!url) return false;
+  if (/odycdn\.com|lbry|phantom/i.test(url)) return false;
+  return /googlevideo\.com|pipedproxy|proxy\.piped|piped\.video/i.test(url) || url.startsWith('https://');
+}
+
+// Instâncias públicas do Invidious (segundo fallback de busca/streams).
+const INVIDIOUS_INSTANCES = (process.env.INVIDIOUS_INSTANCES
+  ? process.env.INVIDIOUS_INSTANCES.split(',').map((s) => s.trim()).filter(Boolean)
+  : [
+      'https://inv.nadeko.net',
+      'https://invidious.privacyredirect.in',
+      'https://iv.melmac.space',
+    ]);
+
+// Instância do Cobalt (terceiro fallback). Por padrão usa uma instância
+// pública alternativa; o ideal é hospedar a própria (ver README do Cobalt).
+// Defina COBALT_API_URL no .env para usar a sua.
+const COBALT_API_URL = (process.env.COBALT_API_URL || 'https://cobalt-api.kwiatekmiki.com').replace(/\/$/, '');
+
+function extractVideoId(input) {
+  const m = String(input || '').match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|v\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
 // Formata segundos em "Xh Ym Zs"
 export function formatUptime(seconds) {
   const h = Math.floor(seconds / 3600);
@@ -101,34 +187,13 @@ function runYtDlpExecFile(args) {
   });
 }
 
-// Sanitiza e valida o arquivo cookies.txt
+// Sincroniza cookies REAIS vindos da variável de ambiente. NÃO cria mais
+// cookies falsos automaticamente: cookies inválidos pioram o bloqueio
+// ("Sign in to confirm you're not a bot") em vez de ajudar.
 function ensureValidCookiesFile() {
   const dir = path.dirname(COOKIES_PATH);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
-  }
-
-  let needsDefault = false;
-  if (!fs.existsSync(COOKIES_PATH)) {
-    needsDefault = true;
-  } else {
-    try {
-      const existing = fs.readFileSync(COOKIES_PATH, 'utf-8');
-      if (existing.length < 200 || !existing.includes('Netscape')) {
-        needsDefault = true;
-      }
-    } catch (_) {
-      needsDefault = true;
-    }
-  }
-
-  if (needsDefault && DEFAULT_COOKIES) {
-    try {
-      fs.writeFileSync(COOKIES_PATH, DEFAULT_COOKIES, 'utf-8');
-      console.log(`[yt-dlp] ✅ cookies.txt inicializado com sucesso (${DEFAULT_COOKIES.length} bytes).`);
-    } catch (err) {
-      console.error('Erro ao escrever DEFAULT_COOKIES:', err);
-    }
   }
 
   // Se houver variável YOUTUBE_COOKIES válida, sincroniza
@@ -150,6 +215,8 @@ function ensureValidCookiesFile() {
       if (rawCookies.includes('youtube.com') && rawCookies.includes('Netscape')) {
         fs.writeFileSync(COOKIES_PATH, rawCookies, 'utf-8');
         console.log(`[yt-dlp] ✅ Cookies do YouTube sincronizados a partir de YOUTUBE_COOKIES.`);
+      } else {
+        console.warn('[yt-dlp] ⚠️ YOUTUBE_COOKIES ignorado: formato inválido (esperado Netscape com youtube.com).');
       }
     } catch (err) {
       console.error('❌ Erro ao escrever YOUTUBE_COOKIES no cookies.txt:', err);
@@ -163,56 +230,67 @@ if (fs.existsSync('/root/.deno/bin') && !process.env.PATH.includes('/root/.deno/
   process.env.PATH = `/root/.deno/bin:${process.env.PATH}`;
 }
 
-// Verifica se há cookies estritamente válidos no formato Netscape
+// Verifica se há cookies REAIS no formato Netscape. Cookies falsos/expirados
+// (como o DEFAULT_COOKIES antigo) são rejeitados: sessão inválida aumenta
+// a chance de bloqueio pelo YouTube.
 function checkValidCookies() {
   try {
     ensureValidCookiesFile();
-    if (fs.existsSync(COOKIES_PATH) && fs.statSync(COOKIES_PATH).size > 100) {
+    if (fs.existsSync(COOKIES_PATH) && fs.statSync(COOKIES_PATH).size > 500) {
       const content = fs.readFileSync(COOKIES_PATH, 'utf-8');
       const isNetscape = content.includes('Netscape') || content.includes('# HTTP Cookie File');
       const hasYoutubeTokens = content.includes('youtube.com');
-      return isNetscape && hasYoutubeTokens;
+      if (!isNetscape || !hasYoutubeTokens) return false;
+      // Rejeita o cookie placeholder antigo que acompanha o repositório
+      if (DEFAULT_COOKIES && content.trim() === DEFAULT_COOKIES.trim()) {
+        console.warn('[yt-dlp] ⚠️ cookies.txt contém os cookies de exemplo (expirados). Ignorando cookies — rode sem cookies ou configure YOUTUBE_COOKIES reais.');
+        return false;
+      }
+      // Heurística: cookie real precisa de ao menos um token de sessão longo
+      const hasSession = /SID|LOGIN_INFO|__Secure-3PAPISID|SAPISID/.test(content);
+      return hasSession;
     }
   } catch (_) {}
   return false;
 }
 
-// Monta os argumentos base para o yt-dlp ignorar bloqueios de robôs do YouTube em servidores (Railway/Cloud)
+// Monta os argumentos base do yt-dlp.
+// IMPORTANTE: não força --user-agent manualmente. Um UA copiado que
+// contradiz o player_client (ex: UA de Chrome com client android) é uma
+// causa clássica do "Sign in to confirm you're not a bot". Deixa o yt-dlp
+// escolher o UA correto para cada cliente.
 function buildBaseArgs(withCookies = true, clientOverride = null) {
   const nodePath = process.execPath;
-  
+
   const args = [
     '--no-playlist',
     '--force-ipv4',
     '--geo-bypass',
-    '--js-runtimes', 'node'
+    '--retries', '3',
+    '--fragment-retries', '3',
+    '--socket-timeout', '20',
+    '--sleep-requests', '1',
+    '--no-warnings',
   ];
 
-  // Configura User-Agent coerente com o tipo de cliente para evitar detecção de spoofing
-  if (clientOverride === 'android') {
-    // Para o cliente Android, deixa o yt-dlp usar os headers nativos do app YouTube
-  } else if (clientOverride === 'mweb') {
-    args.push('--user-agent', 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36');
-  } else {
-    args.push('--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36');
-  }
-
-  // Runtimes JavaScript para resolver desafios de assinatura
+  // Runtimes JavaScript para resolver desafios de assinatura / PO Token
   if (fs.existsSync('/root/.deno/bin/deno')) {
     args.push('--js-runtimes', 'deno:/root/.deno/bin/deno');
   }
   if (nodePath) {
     args.push('--js-runtimes', `node:${nodePath}`);
+  } else {
+    args.push('--js-runtimes', 'node');
   }
-  
+
   if (clientOverride) {
     args.push('--extractor-args', `youtube:player_client=${clientOverride}`);
   }
-  
+
   if (ffmpegPath && fs.existsSync(ffmpegPath)) {
     args.push('--ffmpeg-location', ffmpegPath);
   }
-  
+
   if (withCookies && checkValidCookies() && fs.existsSync(COOKIES_PATH)) {
     args.push('--cookies', COOKIES_PATH);
     console.log('[yt-dlp] Usando cookies autenticados do YouTube.');
@@ -221,23 +299,29 @@ function buildBaseArgs(withCookies = true, clientOverride = null) {
   return args;
 }
 
-// Executa o download com retentativas inteligentes (clientes alternativos para contornar bloqueio de datacenter)
+// Executa o download com retentativas. Ordem segue a recomendação atual do
+// yt-dlp (2026): clientes tv/web_safari funcionam sem credenciais na maioria
+// dos casos; android/ios exigem PO Token e podem falhar em datacenter.
 async function downloadWithYtDlp(url, specificArgs) {
   const attempts = [];
   const hasCookies = checkValidCookies();
 
-  // Se houver cookies reais válidos configurados, tenta primeiro com eles
-  if (hasCookies) {
-    attempts.push({ name: 'cookies + padrao', withCookies: true, client: null });
-    attempts.push({ name: 'cookies + android', withCookies: true, client: 'android' });
-  }
+  // Sem cookies: tenta os clientes menos inspecionados primeiro.
+  // "tv,web_safari" numa única tentativa = yt-dlp tenta em ordem.
+  attempts.push({ name: 'tv+web_safari (sem cookies)', withCookies: false, client: 'tv,web_safari' });
+  attempts.push({ name: 'android_vr (sem cookies)', withCookies: false, client: 'android_vr' });
+  attempts.push({ name: 'mweb (sem cookies)', withCookies: false, client: 'mweb' });
+  attempts.push({ name: 'ios (sem cookies)', withCookies: false, client: 'ios' });
+  attempts.push({ name: 'android (sem cookies)', withCookies: false, client: 'android' });
+  attempts.push({ name: 'padrao (sem cookies)', withCookies: false, client: null });
 
-  // Clientes com menor incidência de bloqueio de IP no YouTube
-  attempts.push({ name: 'cliente android (sem cookies)', withCookies: false, client: 'android' });
-  attempts.push({ name: 'cliente tv_embedded (sem cookies)', withCookies: false, client: 'tv_embedded' });
-  attempts.push({ name: 'cliente mweb (sem cookies)', withCookies: false, client: 'mweb' });
-  attempts.push({ name: 'cliente ios (sem cookies)', withCookies: false, client: 'ios' });
-  attempts.push({ name: 'padrao direto (sem cookies)', withCookies: false, client: null });
+  // Com cookies REAIS: tenta no final (cookies + tv invalida a sessão,
+  // então usa web_safari/mweb com cookies).
+  if (hasCookies) {
+    attempts.push({ name: 'web_safari + cookies', withCookies: true, client: 'web_safari' });
+    attempts.push({ name: 'mweb + cookies', withCookies: true, client: 'mweb' });
+    attempts.push({ name: 'padrao + cookies', withCookies: true, client: null });
+  }
 
   let lastError = null;
 
@@ -259,20 +343,95 @@ async function downloadWithYtDlp(url, specificArgs) {
   throw lastError || new Error('Não foi possível realizar o download após várias tentativas.');
 }
 
-// Extrai ID ou resolve URL / busca do YouTube
+// Busca no Piped (não sofre o mesmo bloqueio de scraping do YouTube)
+async function pipedSearch(query) {
+  for (const base of await getPipedBases()) {
+    try {
+      const res = await axios.get(`${base}/search`, {
+        params: { q: query, filter: 'videos' },
+        timeout: 12000,
+      });
+      const items = res.data?.items || res.data?.data || [];
+      const first = items.find((i) => i?.url && (i.url.includes('watch?v=') || i.type === 'stream'));
+      if (first) {
+        const videoId = extractVideoId(`https://x${first.url}`) || String(first.url).split('v=')[1]?.slice(0, 11);
+        if (!videoId) continue;
+        return {
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          videoId,
+          title: first.title || query,
+          duration: first.duration ? String(first.duration) : '',
+          views: first.views || 0,
+          author: first.uploaderName || first.uploader || 'YouTube',
+        };
+      }
+    } catch (err) {
+      console.warn(`⚠️ Piped search falhou em ${base}: ${err.message?.slice(0, 100)}`);
+    }
+  }
+  return null;
+}
+
+// Busca no Invidious (segundo fallback)
+async function invidiousSearch(query) {
+  for (const base of INVIDIOUS_INSTANCES) {
+    try {
+      const res = await axios.get(`${base}/api/v1/search`, {
+        params: { q: query, type: 'video' },
+        timeout: 12000,
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+      });
+      const first = Array.isArray(res.data) ? res.data.find((i) => i?.videoId) : null;
+      if (first) {
+        return {
+          url: `https://www.youtube.com/watch?v=${first.videoId}`,
+          videoId: first.videoId,
+          title: first.title || query,
+          duration: first.lengthSeconds ? `${Math.floor(first.lengthSeconds / 60)}:${String(first.lengthSeconds % 60).padStart(2, '0')}` : '',
+          views: first.viewCount || 0,
+          author: first.author || 'YouTube',
+        };
+      }
+    } catch (err) {
+      console.warn(`⚠️ Invidious search falhou em ${base}: ${err.message?.slice(0, 100)}`);
+    }
+  }
+  return null;
+}
+
+// Detalhes de um videoId via Piped (quando yt-search está bloqueado)
+async function pipedVideoDetails(videoId) {
+  for (const base of await getPipedBases()) {
+    try {
+      const res = await axios.get(`${base}/streams/${videoId}`, { timeout: 12000 });
+      if (res.data?.title) {
+        return {
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          videoId,
+          title: res.data.title,
+          duration: res.data.duration ? `${Math.floor(res.data.duration / 60)}:${String(Math.floor(res.data.duration % 60)).padStart(2, '0')}` : '',
+          views: res.data.views || 0,
+          author: res.data.uploader || 'YouTube',
+        };
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+// Extrai ID ou resolve URL / busca do YouTube (com fallbacks anti-bloqueio)
 async function resolveYoutubeInfo(query) {
   const cleanQuery = query.trim();
-  const ytUrlRegex = /(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/|v\/|embed\/)|youtu\.be\/)([\w-]{11})/;
-  const match = cleanQuery.match(ytUrlRegex);
+  const videoId = extractVideoId(cleanQuery);
 
-  if (match && match[1]) {
-    const videoId = match[1];
+  if (videoId) {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
     try {
       const videoDetails = await yts({ videoId });
       if (videoDetails && videoDetails.title) {
         return {
           url,
+          videoId,
           title: videoDetails.title,
           duration: videoDetails.timestamp || '',
           views: videoDetails.views || 0,
@@ -280,86 +439,216 @@ async function resolveYoutubeInfo(query) {
         };
       }
     } catch (err) {
-      console.warn('⚠️ Não foi possível obter detalhes via yts para videoId:', videoId, err.message);
+      console.warn('⚠️ yts bloqueado para videoId, tentando Piped:', videoId, err.message?.slice(0, 80));
     }
-    return {
-      url,
-      title: 'Áudio do YouTube',
-      duration: '',
-      views: 0,
-      author: 'YouTube'
-    };
+    const piped = await pipedVideoDetails(videoId);
+    if (piped) return piped;
+    return { url, videoId, title: 'Áudio do YouTube', duration: '', views: 0, author: 'YouTube' };
   }
 
-  // Busca por texto
-  const searchResult = await yts(cleanQuery);
-  const video = searchResult.videos ? searchResult.videos[0] : searchResult;
-  if (!video || !video.url) {
-    throw new Error('Nenhum vídeo encontrado para esta busca.');
+  // Busca por texto: yt-search primeiro, Piped e Invidious como fallback
+  try {
+    const searchResult = await yts(cleanQuery);
+    const video = searchResult.videos ? searchResult.videos[0] : searchResult;
+    if (video?.url) {
+      return {
+        url: video.url,
+        videoId: extractVideoId(video.url),
+        title: video.title || cleanQuery,
+        duration: video.timestamp || '',
+        views: video.views || 0,
+        author: video.author?.name || 'YouTube'
+      };
+    }
+  } catch (err) {
+    console.warn('⚠️ yt-search bloqueado, tentando Piped/Invidious:', err.message?.slice(0, 100));
   }
-  return {
-    url: video.url,
-    title: video.title || cleanQuery,
-    duration: video.timestamp || '',
-    views: video.views || 0,
-    author: video.author?.name || 'YouTube'
-  };
+
+  const piped = await pipedSearch(cleanQuery);
+  if (piped) {
+    console.log(`[busca] ✅ Resolvido via Piped: ${piped.title}`);
+    return piped;
+  }
+  const inv = await invidiousSearch(cleanQuery);
+  if (inv) {
+    console.log(`[busca] ✅ Resolvido via Invidious: ${inv.title}`);
+    return inv;
+  }
+  throw new Error('Nenhum vídeo encontrado para esta busca (YouTube bloqueou todas as fontes de pesquisa).');
 }
 
-// Busca e baixa áudio do YouTube
-export async function downloadYoutubeAudio(query) {
-  try {
-    const info = await resolveYoutubeInfo(query);
-    const tmpFile = path.join(os.tmpdir(), `yt-audio-${Date.now()}.mp3`);
+// Baixa um stream remoto para arquivo temporário
+async function downloadStreamToFile(streamUrl, tmpFile, referer = 'https://www.youtube.com/') {
+  const res = await axios.get(streamUrl, {
+    responseType: 'arraybuffer',
+    timeout: 60000,
+    maxContentLength: 120 * 1024 * 1024,
+    maxBodyLength: 120 * 1024 * 1024,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+      Referer: referer,
+    },
+  });
+  fs.writeFileSync(tmpFile, Buffer.from(res.data));
+  return tmpFile;
+}
 
+function convertToMp3(inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    const bin = (ffmpegPath && fs.existsSync(ffmpegPath)) ? ffmpegPath : 'ffmpeg';
+    execFile(bin, ['-y', '-i', inputPath, '-vn', '-c:a', 'libmp3lame', '-q:a', '4', outputPath], (err) => {
+      if (err) return reject(err);
+      resolve(outputPath);
+    });
+  });
+}
+
+// Fallback 1: baixa áudio/vídeo via Piped (backend fora do IP bloqueado)
+async function downloadViaPiped(info, kind = 'audio') {
+  const videoId = info.videoId || extractVideoId(info.url);
+  if (!videoId) throw new Error('Piped: sem videoId');
+  let lastErr = null;
+  for (const base of await getPipedBases()) {
+    try {
+      const res = await axios.get(`${base}/streams/${videoId}`, { timeout: 15000 });
+      const data = res.data;
+      if (!data) continue;
+
+      if (kind === 'audio') {
+        const streams = (data.audioStreams || []).filter((s) => isUsableStreamUrl(s?.url));
+        if (!streams.length) {
+          lastErr = new Error('sem audioStreams utilizáveis (só espelho LBRY?)');
+          continue; // tenta a próxima instância em vez de baixar lixo
+        }
+        // Prefere m4a/opus de maior bitrate
+        streams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+        const best = streams[0];
+        const rawTmp = path.join(os.tmpdir(), `piped-raw-${Date.now()}.tmp`);
+        await downloadStreamToFile(best.url, rawTmp, base);
+        const mp3Tmp = path.join(os.tmpdir(), `yt-audio-${Date.now()}.mp3`);
+        try {
+          await convertToMp3(rawTmp, mp3Tmp);
+          try { fs.unlinkSync(rawTmp); } catch (_) {}
+        } catch (_) {
+          fs.renameSync(rawTmp, mp3Tmp);
+        }
+        console.log(`[download] ✅ Áudio via Piped (${base})`);
+        return { filePath: mp3Tmp, title: data.title || info.title, duration: info.duration, views: data.views ?? info.views, author: data.uploader || info.author, url: info.url };
+      }
+
+      // vídeo: prefere stream progressivo (áudio+vídeo) mp4 <= 720p
+      const progressive = (data.videoStreams || []).filter((s) => s?.url && s.videoOnly === false && isUsableStreamUrl(s.url));
+      const pool = progressive.length ? progressive : (data.videoStreams || []).filter((s) => isUsableStreamUrl(s?.url));
+      if (!pool.length) {
+        lastErr = new Error('sem videoStreams utilizáveis (só espelho LBRY?)');
+        continue;
+      }
+      const mp4s = pool.filter((s) => (s.mimeType || '').includes('mp4'));
+      const candidates = mp4s.length ? mp4s : pool;
+      candidates.sort((a, b) => (a.height || 0) - (b.height || 0));
+      const picked = [...candidates].reverse().find((s) => (s.height || 9999) <= 720) || candidates[candidates.length - 1];
+      const tmpFile = path.join(os.tmpdir(), `yt-video-${Date.now()}.mp4`);
+      await downloadStreamToFile(picked.url, tmpFile, base);
+      console.log(`[download] ✅ Vídeo via Piped (${base})`);
+      return { filePath: tmpFile, title: data.title || info.title, duration: info.duration, views: data.views ?? info.views, author: data.uploader || info.author, url: info.url };
+    } catch (err) {
+      lastErr = err;
+      console.warn(`⚠️ Piped ${base} falhou: ${err.message?.slice(0, 100)}`);
+    }
+  }
+  throw lastErr || new Error('Piped: todas as instâncias falharam');
+}
+
+// Fallback 2: baixa via Cobalt API (precisa de instância própria ou pública liberada)
+async function downloadViaCobalt(info, kind = 'audio') {
+  const body = kind === 'audio'
+    ? { url: info.url, downloadMode: 'audio', audioFormat: 'mp3', audioBitrate: '128', filenameStyle: 'basic' }
+    : { url: info.url, downloadMode: 'auto', videoQuality: '720', youtubeVideoCodec: 'h264', filenameStyle: 'basic' };
+  const res = await axios.post(COBALT_API_URL, body, {
+    timeout: 30000,
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+  });
+  const data = res.data;
+  const fileUrl = data?.url || data?.tunnel?.[0];
+  if (data?.status === 'error' || !fileUrl) {
+    throw new Error(`Cobalt: ${data?.error?.code || data?.text || 'sem URL de download'}`);
+  }
+  const tmpFile = path.join(os.tmpdir(), kind === 'audio' ? `yt-audio-${Date.now()}.mp3` : `yt-video-${Date.now()}.mp4`);
+  await downloadStreamToFile(fileUrl, tmpFile, COBALT_API_URL);
+  console.log(`[download] ✅ Via Cobalt (${COBALT_API_URL})`);
+  return { filePath: tmpFile, title: info.title, duration: info.duration, views: info.views, author: info.author, url: info.url };
+}
+
+// Busca e baixa áudio do YouTube.
+// Cadeia de fallbacks: yt-dlp local → Piped → Cobalt.
+// O yt-dlp falha com frequência em IP de datacenter (Fly/Railway);
+// os fallbacks usam backends externos que não estão bloqueados.
+export async function downloadYoutubeAudio(query) {
+  const info = await resolveYoutubeInfo(query);
+
+  // 1) yt-dlp local
+  try {
+    const tmpFile = path.join(os.tmpdir(), `yt-audio-${Date.now()}.mp3`);
     const specificArgs = [
       '--extract-audio',
       '--audio-format', 'mp3',
       '--audio-quality', '0',
       '--output', tmpFile
     ];
-
     await downloadWithYtDlp(info.url, specificArgs);
-
-    return {
-      filePath: tmpFile,
-      title: info.title,
-      duration: info.duration,
-      views: info.views,
-      author: info.author,
-      url: info.url
-    };
+    return { filePath: tmpFile, title: info.title, duration: info.duration, views: info.views, author: info.author, url: info.url };
   } catch (error) {
-    console.error('Erro no downloadYoutubeAudio:', error);
-    throw error;
+    console.warn('⚠️ yt-dlp falhou no áudio, tentando Piped:', error.message?.slice(0, 120));
+  }
+
+  // 2) Piped
+  try {
+    return await downloadViaPiped(info, 'audio');
+  } catch (error) {
+    console.warn('⚠️ Piped falhou no áudio, tentando Cobalt:', error.message?.slice(0, 120));
+  }
+
+  // 3) Cobalt
+  try {
+    return await downloadViaCobalt(info, 'audio');
+  } catch (error) {
+    console.error('Erro no downloadYoutubeAudio (todas as fontes falharam):', error.message?.slice(0, 200));
+    const msg = error.message || '';
+    if (msg.includes('not a bot') || msg.includes('429') || msg.includes('LOGIN_REQUIRED')) {
+      throw new Error('O YouTube bloqueou o IP do servidor. Tente de novo em alguns minutos ou configure YOUTUBE_COOKIES reais / COBALT_API_URL própria.');
+    }
+    throw new Error(`Não foi possível baixar o áudio após 3 fontes. Último erro: ${msg.slice(0, 120)}`);
   }
 }
 
-// Busca e baixa vídeo do YouTube
+// Busca e baixa vídeo do YouTube (mesma cadeia de fallbacks do áudio)
 export async function downloadYoutubeVideo(query) {
-  try {
-    const info = await resolveYoutubeInfo(query);
-    const tmpFile = path.join(os.tmpdir(), `yt-video-${Date.now()}.mp4`);
+  const info = await resolveYoutubeInfo(query);
 
+  try {
+    const tmpFile = path.join(os.tmpdir(), `yt-video-${Date.now()}.mp4`);
     const specificArgs = [
       '--format', 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best',
       '--merge-output-format', 'mp4',
       '--output', tmpFile
     ];
-
     await downloadWithYtDlp(info.url, specificArgs);
-
-    return {
-      filePath: tmpFile,
-      title: info.title,
-      duration: info.duration,
-      views: info.views,
-      author: info.author,
-      url: info.url
-    };
+    return { filePath: tmpFile, title: info.title, duration: info.duration, views: info.views, author: info.author, url: info.url };
   } catch (error) {
-    console.error('Erro no downloadYoutubeVideo:', error);
-    throw error;
+    console.warn('⚠️ yt-dlp falhou no vídeo, tentando Piped:', error.message?.slice(0, 120));
+  }
+
+  try {
+    return await downloadViaPiped(info, 'video');
+  } catch (error) {
+    console.warn('⚠️ Piped falhou no vídeo, tentando Cobalt:', error.message?.slice(0, 120));
+  }
+
+  try {
+    return await downloadViaCobalt(info, 'video');
+  } catch (error) {
+    console.error('Erro no downloadYoutubeVideo (todas as fontes falharam):', error.message?.slice(0, 200));
+    throw new Error(`Não foi possível baixar o vídeo após 3 fontes. Último erro: ${(error.message || '').slice(0, 120)}`);
   }
 }
 

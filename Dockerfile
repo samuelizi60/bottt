@@ -3,6 +3,7 @@ FROM node:20-slim
 # Instala Python 3, FFmpeg, Curl, Unzip e certificados SSL no ambiente Debian do Railway
 RUN apt-get update && apt-get install -y \
     python3 \
+    python3-pip \
     ffmpeg \
     ca-certificates \
     curl \
@@ -16,6 +17,11 @@ ENV PATH="$DENO_INSTALL/bin:$PATH"
 
 # Instala a versão oficial mais recente do yt-dlp diretamente do GitHub
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && chmod a+rx /usr/local/bin/yt-dlp
+
+# Plugin de PO Token (em 2026 o YouTube exige Proof-of-Origin em vários
+# clientes; sem ele o erro "Sign in to confirm you're not a bot" persiste
+# mesmo com cookies). Falha de rede aqui não quebra o build.
+RUN pip3 install --no-cache-dir --break-system-packages bgutil-ytdlp-pot-provider || pip3 install --no-cache-dir bgutil-ytdlp-pot-provider || true
 
 WORKDIR /app
 
