@@ -15,7 +15,7 @@ function normJid(jid) {
 
 // Heurística numérica só faz sentido entre JIDs de telefone.
 // LIDs (@lid) são IDs opacos — comparar dígitos deles com telefones erra.
-function isPhoneJid(jid) {
+export function isPhoneJid(jid) {
   return typeof jid === 'string' && (jid.endsWith('@s.whatsapp.net') || jid.endsWith('@c.us'));
 }
 
