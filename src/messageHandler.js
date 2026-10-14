@@ -332,9 +332,24 @@ export async function handleMessages(rawSock, msg) {
   const args = body.slice(prefix.length).trim().split(/ +/);
   const command = args.shift().toLowerCase();
 
+  // Menções: lê do contextInfo da mensagem já desembrulhada (cobre
+  // ephemeral/deviceSent/viewOnce) + fallback na mensagem original.
+  // Sem isso, /ban @user e /kick @user não acham o alvo.
   let mentioned = [];
-  if (msg.message?.extendedTextMessage?.contextInfo?.mentionedJid) {
-    mentioned = msg.message.extendedTextMessage.contextInfo.mentionedJid;
+  const contextInfos = [
+    messageObj?.extendedTextMessage?.contextInfo,
+    messageObj?.imageMessage?.contextInfo,
+    messageObj?.videoMessage?.contextInfo,
+    messageObj?.documentMessage?.contextInfo,
+    msg.message?.extendedTextMessage?.contextInfo,
+  ];
+  for (const ctx of contextInfos) {
+    const list = ctx?.mentionedJid;
+    if (Array.isArray(list)) {
+      for (const jid of list) {
+        if (jid && !mentioned.includes(jid)) mentioned.push(jid);
+      }
+    }
   }
 
   console.log(`[COMANDO] ${command} executado por ${sender} no chat ${from}`);

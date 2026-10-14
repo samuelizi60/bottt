@@ -1,4 +1,4 @@
-import { checkIfOwner, isAdmin } from '../admin.js';
+import { checkIfOwner, isAdmin, isBotAdmin, isPhoneJid, resolveActionTarget } from '../admin.js';
 import { addWarn, getWarns, resetWarns } from '../../database/sqlite.js';
 
 export async function handleWarnCommand(sock, msg, args, sender, mentioned) {
@@ -19,7 +19,7 @@ export async function handleWarnCommand(sock, msg, args, sender, mentioned) {
     return sock.sendMessage(from, { text: '⚠️ Marque alguém ou responda à mensagem da pessoa que deseja advertir.' }, { quoted: msg });
   }
 
-  if (checkIfOwner(target)) {
+  if (isPhoneJid(target) && checkIfOwner(target)) {
     return sock.sendMessage(from, { text: '⚠️ Não é possível advertir o dono do bot!' }, { quoted: msg });
   }
 
@@ -28,16 +28,17 @@ export async function handleWarnCommand(sock, msg, args, sender, mentioned) {
 
   if (count >= MAX_WARNS) {
     resetWarns(from, target);
-    const botJid = sock.user?.id || '';
-    if (isAdmin(participants, botJid)) {
+    const resolved = resolveActionTarget(groupMetadata, target);
+    const actionJid = resolved?.actionJid || target;
+    if (isBotAdmin(participants, sock) && resolved) {
       try {
         if (isAdmin(participants, target)) {
-          await sock.groupParticipantsUpdate(from, [target], 'demote');
+          await sock.groupParticipantsUpdate(from, [actionJid], 'demote');
         }
-        await sock.groupParticipantsUpdate(from, [target], 'remove');
+        await sock.groupParticipantsUpdate(from, [actionJid], 'remove');
         return sock.sendMessage(from, { 
-          text: `⚠️ @${target.split('@')[0]} atingiu ${MAX_WARNS}/${MAX_WARNS} advertências e foi removido do grupo!`,
-          mentions: [target]
+          text: `⚠️ @${actionJid.split('@')[0]} atingiu ${MAX_WARNS}/${MAX_WARNS} advertências e foi removido do grupo!`,
+          mentions: [actionJid]
         }, { quoted: msg });
       } catch (err) {
         console.error('Erro ao remover membro com max advertências:', err);

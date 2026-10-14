@@ -1,4 +1,4 @@
-import { checkIfOwner, isAdmin } from '../admin.js';
+import { checkIfOwner, isAdmin, isBotAdmin, resolveActionTarget } from '../admin.js';
 
 export async function handleDemoteCommand(sock, msg, args, sender, mentioned) {
   const from = msg.key.remoteJid;
@@ -13,8 +13,7 @@ export async function handleDemoteCommand(sock, msg, args, sender, mentioned) {
     return sock.sendMessage(from, { text: '⚠️ Apenas administradores do grupo ou o dono do bot podem utilizar este comando.' }, { quoted: msg });
   }
 
-  const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-  if (!isAdmin(participants, botJid)) {
+  if (!isBotAdmin(participants, sock)) {
     return sock.sendMessage(from, { text: '⚠️ Eu preciso ser administrador do grupo para rebaixar membros.' }, { quoted: msg });
   }
 
@@ -23,9 +22,14 @@ export async function handleDemoteCommand(sock, msg, args, sender, mentioned) {
     return sock.sendMessage(from, { text: '⚠️ Marque alguém ou responda à mensagem da pessoa para rebaixar.' }, { quoted: msg });
   }
 
+  const resolved = resolveActionTarget(groupMetadata, target);
+  if (!resolved) {
+    return sock.sendMessage(from, { text: '⚠️ Não encontrei essa pessoa na lista de participantes do grupo.' }, { quoted: msg });
+  }
+
   try {
-    await sock.groupParticipantsUpdate(from, [target], 'demote');
-    return sock.sendMessage(from, { text: `🛡️ @${target.split('@')[0]} teve seu cargo de Administrador removido.`, mentions: [target] }, { quoted: msg });
+    await sock.groupParticipantsUpdate(from, [resolved.actionJid], 'demote');
+    return sock.sendMessage(from, { text: `🛡️ @${resolved.actionJid.split('@')[0]} teve seu cargo de Administrador removido.`, mentions: [resolved.actionJid] }, { quoted: msg });
   } catch (err) {
     return sock.sendMessage(from, { text: '⚠️ Erro ao tentar rebaixar o participante.' }, { quoted: msg });
   }
