@@ -88,10 +88,13 @@ const INVIDIOUS_INSTANCES = (process.env.INVIDIOUS_INSTANCES
       'https://iv.melmac.space',
     ]);
 
-// Instância do Cobalt (terceiro fallback). Por padrão usa uma instância
-// pública alternativa; o ideal é hospedar a própria (ver README do Cobalt).
-// Defina COBALT_API_URL no .env para usar a sua.
-const COBALT_API_URL = (process.env.COBALT_API_URL || 'https://cobalt-api.kwiatekmiki.com').replace(/\/$/, '');
+// Instância do Cobalt (fallback opcional). As instâncias públicas mudam e
+// muitas exigem chave — por isso SÓ é usada quando configurada.
+// Para ativar: hospede sua instância (ou use uma liberada) e defina
+// COBALT_API_URL no Railway, ex: https://sua-instancia.com
+// Se a instância exigir autenticação, defina também COBALT_API_KEY.
+const COBALT_API_URL = (process.env.COBALT_API_URL || '').trim().replace(/\/$/, '');
+const COBALT_API_KEY = (process.env.COBALT_API_KEY || '').trim();
 
 function extractVideoId(input) {
   const m = String(input || '').match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|v\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/);
@@ -183,6 +186,85 @@ function runYtDlpExecFile(args) {
   });
 }
 
+// Converte vários formatos de exportação de cookies para Netscape
+// (o formato que o yt-dlp aceita). Aceita:
+//  1) Netscape cru (extensão "Get cookies.txt LOCALLY")
+//  2) Base64 do Netscape
+//  3) JSON de extensões (Cookie-Editor/EditThisCookie): [{domain,name,value,...}]
+//  4) Pares name=value (um por linha ou separados por ;)
+export function normalizeCookiesToNetscape(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  let text = raw.trim();
+  if (!text) return null;
+
+  // 2) Base64?
+  if (!text.includes('\t') && !text.includes('# Netscape') && !text.includes('youtube.com') && text.length > 50) {
+    try {
+      const decoded = Buffer.from(text, 'base64').toString('utf-8');
+      if (decoded.includes('youtube.com') || decoded.includes('Netscape')) {
+        console.log('[yt-dlp] Cookies decodificados de Base64 com sucesso.');
+        text = decoded.trim();
+      }
+    } catch (_) {}
+  }
+  if (text.includes('\\n')) {
+    text = text.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+  }
+
+  // 1) Já é Netscape?
+  if ((text.includes('Netscape') || text.includes('# HTTP Cookie File')) && text.includes('youtube.com')) {
+    return text.endsWith('\n') ? text : text + '\n';
+  }
+
+  // 3) JSON de extensões?
+  const cookies = [];
+  const trimmed = text.trim();
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const arr = Array.isArray(parsed) ? parsed : parsed.cookies || parsed.data || [];
+      for (const c of arr) {
+        if (c && c.name && c.value !== undefined) {
+          cookies.push({
+            domain: c.domain || '.youtube.com',
+            path: c.path || '/',
+            secure: c.secure === true || String(c.name).startsWith('__Secure-'),
+            expiry: Number(c.expirationDate || c.expiry || 1893456000),
+            name: String(c.name),
+            value: String(c.value),
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 4) Pares name=value?
+  if (!cookies.length && /[A-Za-z0-9_-]+\s*=\s*[^;\s\n]+/.test(text) && !text.includes('\t')) {
+    const pairs = text.split(/[;\n]+/).map((s) => s.trim()).filter(Boolean);
+    for (const pair of pairs) {
+      const eq = pair.indexOf('=');
+      if (eq > 0) {
+        const name = pair.slice(0, eq).trim();
+        const value = pair.slice(eq + 1).trim();
+        if (name && value && !/^(domain|path|expires|max-age|secure|samesite)$/i.test(name)) {
+          cookies.push({ domain: '.youtube.com', path: '/', secure: name.startsWith('__Secure-'), expiry: 1893456000, name, value });
+        }
+      }
+    }
+  }
+
+  const ytCookies = cookies.filter((c) => /youtube\.com|google\.com|youtu\.be/i.test(c.domain || ''));
+  const source = ytCookies.length ? ytCookies : cookies;
+  if (!source.length) return null;
+
+  const lines = ['# Netscape HTTP Cookie File', '# Convertido automaticamente pelo bot a partir de YOUTUBE_COOKIES', ''];
+  for (const c of source) {
+    const domain = c.domain.startsWith('.') ? c.domain : `.${c.domain}`;
+    lines.push([domain, 'TRUE', c.path || '/', c.secure ? 'TRUE' : 'FALSE', String(Math.floor(c.expiry) || 1893456000), c.name, c.value].join('\t'));
+  }
+  return lines.join('\n') + '\n';
+}
+
 // Sincroniza cookies REAIS vindos da variável de ambiente. NÃO cria mais
 // cookies falsos automaticamente: cookies inválidos pioram o bloqueio
 // ("Sign in to confirm you're not a bot") em vez de ajudar.
@@ -195,24 +277,13 @@ function ensureValidCookiesFile() {
   // Se houver variável YOUTUBE_COOKIES válida, sincroniza
   if (process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.trim()) {
     try {
-      let rawCookies = process.env.YOUTUBE_COOKIES.trim();
-      if (!rawCookies.includes('\t') && !rawCookies.includes('# Netscape') && rawCookies.length > 50) {
-        try {
-          const decoded = Buffer.from(rawCookies, 'base64').toString('utf-8');
-          if (decoded.includes('youtube.com') || decoded.includes('Netscape')) {
-            rawCookies = decoded;
-            console.log('[yt-dlp] Cookies decodificados de Base64 com sucesso.');
-          }
-        } catch (_) {}
-      }
-      if (rawCookies.includes('\\n')) {
-        rawCookies = rawCookies.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
-      }
-      if (rawCookies.includes('youtube.com') && rawCookies.includes('Netscape')) {
-        fs.writeFileSync(COOKIES_PATH, rawCookies, 'utf-8');
-        console.log(`[yt-dlp] ✅ Cookies do YouTube sincronizados a partir de YOUTUBE_COOKIES.`);
+      const netscape = normalizeCookiesToNetscape(process.env.YOUTUBE_COOKIES);
+      if (netscape && netscape.includes('youtube.com')) {
+        fs.writeFileSync(COOKIES_PATH, netscape, 'utf-8');
+        console.log(`[yt-dlp] ✅ Cookies do YouTube sincronizados a partir de YOUTUBE_COOKIES (${netscape.length} bytes).`);
       } else {
-        console.warn('[yt-dlp] ⚠️ YOUTUBE_COOKIES ignorado: formato inválido (esperado Netscape com youtube.com).');
+        const raw = process.env.YOUTUBE_COOKIES.trim();
+        console.warn(`[yt-dlp] ⚠️ YOUTUBE_COOKIES ignorado: formato não reconhecido (${raw.length} chars, tabs=${raw.includes('\t')}, youtube.com=${raw.includes('youtube.com')}, json=${/^[[{]/.test(raw)}). Exporte com a extensão "Get cookies.txt LOCALLY" logado no YouTube e cole o conteúdo inteiro (ou o Base64 dele).`);
       }
     } catch (err) {
       console.error('❌ Erro ao escrever YOUTUBE_COOKIES no cookies.txt:', err);
@@ -555,14 +626,19 @@ async function downloadViaPiped(info, kind = 'audio') {
   throw lastErr || new Error('Piped: todas as instâncias falharam');
 }
 
-// Fallback 2: baixa via Cobalt API (precisa de instância própria ou pública liberada)
+// Fallback 2: baixa via Cobalt API (somente quando COBALT_API_URL configurada)
 async function downloadViaCobalt(info, kind = 'audio') {
+  if (!COBALT_API_URL) {
+    throw new Error('Cobalt não configurado (defina COBALT_API_URL no Railway)');
+  }
   const body = kind === 'audio'
     ? { url: info.url, downloadMode: 'audio', audioFormat: 'mp3', audioBitrate: '128', filenameStyle: 'basic' }
     : { url: info.url, downloadMode: 'auto', videoQuality: '720', youtubeVideoCodec: 'h264', filenameStyle: 'basic' };
+  const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
+  if (COBALT_API_KEY) headers.Authorization = `Api-Key ${COBALT_API_KEY}`;
   const res = await axios.post(COBALT_API_URL, body, {
     timeout: 30000,
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    headers,
   });
   const data = res.data;
   const fileUrl = data?.url || data?.tunnel?.[0];
@@ -610,10 +686,13 @@ export async function downloadYoutubeAudio(query) {
   } catch (error) {
     console.error('Erro no downloadYoutubeAudio (todas as fontes falharam):', error.message?.slice(0, 200));
     const msg = error.message || '';
+    const cookiesHint = checkValidCookies()
+      ? ''
+      : ' Sem cookies válidos no servidor: exporte o cookies.txt (extensão "Get cookies.txt LOCALLY", logado no YouTube) e cole em YOUTUBE_COOKIES no Railway.';
     if (msg.includes('not a bot') || msg.includes('429') || msg.includes('LOGIN_REQUIRED')) {
-      throw new Error('O YouTube bloqueou o IP do servidor. Tente de novo em alguns minutos ou configure YOUTUBE_COOKIES reais / COBALT_API_URL própria.');
+      throw new Error(`O YouTube bloqueou o IP do servidor.${cookiesHint}`);
     }
-    throw new Error(`Não foi possível baixar o áudio após 3 fontes. Último erro: ${msg.slice(0, 120)}`);
+    throw new Error(`Não foi possível baixar o áudio após 3 fontes. Último erro: ${msg.slice(0, 120)}.${cookiesHint}`);
   }
 }
 
