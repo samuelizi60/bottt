@@ -283,7 +283,12 @@ function ensureValidCookiesFile() {
         console.log(`[yt-dlp] ✅ Cookies do YouTube sincronizados a partir de YOUTUBE_COOKIES (${netscape.length} bytes).`);
       } else {
         const raw = process.env.YOUTUBE_COOKIES.trim();
-        console.warn(`[yt-dlp] ⚠️ YOUTUBE_COOKIES ignorado: formato não reconhecido (${raw.length} chars, tabs=${raw.includes('\t')}, youtube.com=${raw.includes('youtube.com')}, json=${/^[[{]/.test(raw)}). Exporte com a extensão "Get cookies.txt LOCALLY" logado no YouTube e cole o conteúdo inteiro (ou o Base64 dele).`);
+        // Lista os domínios presentes para diagnosticar export do site errado
+        let domains = '';
+        try {
+          domains = [...new Set(raw.split('\n').map((l) => (l.split('\t')[0] || '').trim()).filter((s) => s && s.includes('.') && !s.startsWith('#')))].slice(0, 6).join(', ');
+        } catch (_) {}
+        console.warn(`[yt-dlp] ⚠️ YOUTUBE_COOKIES ignorado: formato não reconhecido (${raw.length} chars, tabs=${raw.includes('\t')}, youtube.com=${raw.includes('youtube.com')}, json=${/^[[{]/.test(raw)}${domains ? `, dominios=[${domains}]` : ''}). Exporte com a extensão "Get cookies.txt LOCALLY" com a aba do youtube.com aberta e logada, e cole o conteúdo inteiro (ou o Base64 dele).`);
       }
     } catch (err) {
       console.error('❌ Erro ao escrever YOUTUBE_COOKIES no cookies.txt:', err);
